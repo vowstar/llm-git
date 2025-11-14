@@ -80,9 +80,19 @@ SCOPE EXTRACTION (>60% threshold examples):
 - Format: lowercase, max 2 segments, use / - \_ only
 - Special scopes (even if not suggested): toolchain, deps, config
 
-FORBIDDEN SCOPES (NEVER use these generic placeholder directories):
+WHEN TO OMIT SCOPE (prefer null over unhelpful values):
+- Multi-component or cross-cutting changes
+- No clear dominant component (e.g., 50/50 split)
+- Project-wide refactoring
+- Entire codebase changes
+- ALWAYS prefer null over generic/unhelpful scopes
+
+FORBIDDEN SCOPES (NEVER use these):
 - src, lib, include, tests, test, benches, examples, docs
-- If changes only in these dirs with no meaningful subdir, omit scope entirely
+- Project name or repository name
+- Generic terms: app, main, core (unless core is a specific module)
+- Overly broad: entire, all, everything, general, misc
+- If only these would apply, use null instead
 
 ═══════════════════════════════════════════════════════════════════════════════
 SECTION 3: OUTPUT SCHEMA
@@ -173,7 +183,19 @@ Example 2 - Refactor (provably unchanged):
 "issues": []
 }
 
-Example 3 - Fix with issue:
+Example 3 - Multi-component change (null scope):
+{
+"commit_type": "feat",
+"scope": null,
+"details": [
+"Added structured error handling across all modules.",
+"Migrated from String errors to typed error enums.",
+"Updated 15 files to use consistent error patterns."
+],
+"issues": []
+}
+
+Example 4 - Fix with issue:
 {
 "commit_type": "fix",
 "scope": "parser",
@@ -184,7 +206,7 @@ Example 3 - Fix with issue:
 "issues": ["456"]
 }
 
-Example 4 - Simple change (minimal details):
+Example 5 - Simple change (minimal details):
 {
 "commit_type": "chore",
 "scope": "deps",

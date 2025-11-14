@@ -605,12 +605,30 @@ where
 fn value_to_string_vec(value: Value) -> Vec<String> {
    match value {
       Value::Null => Vec::new(),
-      Value::String(s) => s
-         .lines()
-         .map(str::trim)
-         .filter(|s| !s.is_empty())
-         .map(|s| s.to_string())
-         .collect(),
+      Value::String(s) => {
+         let trimmed = s.trim();
+
+         // Try to parse as JSON array if it looks like one
+         if trimmed.starts_with('[') {
+            // Remove trailing punctuation (., etc) that might have been added by AI
+            let cleaned = trimmed.trim_end_matches(|c: char| c == '.' || c == ',' || c == ';');
+
+            // Attempt to parse as JSON array
+            if let Ok(Value::Array(arr)) = serde_json::from_str::<Value>(cleaned) {
+               return arr
+                  .into_iter()
+                  .flat_map(|v| value_to_string_vec(v).into_iter())
+                  .collect();
+            }
+         }
+
+         // Default: split by lines
+         s.lines()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .collect()
+      }
       Value::Array(arr) => arr
          .into_iter()
          .flat_map(|v| value_to_string_vec(v).into_iter())
