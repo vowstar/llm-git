@@ -42,6 +42,10 @@ REQUIREMENTS:
 4. NO trailing period (conventional commits style)
 5. Focus on primary change (single concept if scope specific)
 6. NO leading adjectives before verb
+7. CRITICAL - Convey motivation/purpose when space permits:
+   - Include WHY when it adds essential context (not just WHAT)
+   - Distill the purpose from detail points
+   - Balance brevity with meaningful context
 
 FORBIDDEN PATTERNS:
 
@@ -54,11 +58,11 @@ FORBIDDEN PATTERNS:
 
 GOOD EXAMPLES (showing type in parens for clarity):
 
-- (feat) "added TLS support with mutual authentication"
-- (refactor) "migrated HTTP transport to unified builder API"
-- (fix) "corrected race condition in connection pool"
-- (perf) "optimized batch processing to reduce allocations"
-- (build) "updated serde to 1.0.200 for security fix"
+- (feat) "added TLS support to prevent man-in-the-middle attacks"
+- (refactor) "migrated HTTP transport to unified builder API for consistency"
+- (fix) "corrected race condition causing connection pool exhaustion"
+- (perf) "optimized batch processing to eliminate allocation overhead"
+- (build) "updated serde to 1.0.200 for CVE-2024-1234 fix"
 
 BAD EXAMPLES:
 
@@ -66,6 +70,9 @@ BAD EXAMPLES:
 - (feat) "add comprehensive support for..." ❌ (filler + present tense)
 - (chore) "update deps and improve build" ❌ (multiple concepts)
 - (fix) "Fixed issue with parser" ❌ (capitalized)
+- (feat) "added retry logic" ❌ (missing WHY - why was retry needed?)
+- (refactor) "restructured error handling" ❌ (no motivation - what problem did it solve?)
+- (perf) "optimized database queries" ❌ (vague - what was the performance issue?)
 
 CHECKLIST BEFORE RESPONDING:
 ✓ Summary ≤{{ chars }} chars
@@ -77,3 +84,4 @@ CHECKLIST BEFORE RESPONDING:
 ✓ Single focused concept
 ✓ Aligns with detail points
 ✓ Specific (names subsystem/artifact when relevant)
+✓ Conveys motivation/purpose when space permits (WHY, not just WHAT)

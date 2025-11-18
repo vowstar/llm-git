@@ -1,15 +1,20 @@
 use analysis::extract_scope_candidates;
-use api::{fallback_summary, generate_conventional_analysis, generate_summary_from_analysis};
+use api::{
+   AnalysisContext, fallback_summary, generate_conventional_analysis,
+   generate_summary_from_analysis,
+};
 use arboard::Clipboard;
 use clap::Parser;
 use compose::run_compose_mode;
 use config::CommitConfig;
 use diff::smart_truncate_diff;
 use error::{CommitGenError, Result};
-use git::{get_git_diff, get_git_stat, git_commit, git_push};
+use git::{
+   get_common_scopes, get_git_diff, get_git_stat, get_recent_commits, git_commit, git_push,
+};
 use llm_git::*;
 use normalization::{format_commit_message, post_process_commit_message};
-use types::{Args, ConventionalAnalysis, ConventionalCommit, Mode, resolve_model_name};
+use types::{Args, ConventionalCommit, Mode, resolve_model_name};
 use validation::{check_type_scope_consistency, validate_commit_message};
 
 /// Apply CLI overrides to config
@@ -44,10 +49,8 @@ fn load_config_from_args(args: &Args) -> Result<CommitConfig> {
    }
 }
 
-/// Build footers from CLI args and analysis issue refs
-///
-/// Deduplicates issue refs from analysis that are already in CLI args
-fn build_footers(args: &Args, analysis: &ConventionalAnalysis) -> Vec<String> {
+/// Build footers from CLI args
+fn build_footers(args: &Args) -> Vec<String> {
    let mut footers = Vec::new();
 
    // Add issue refs from CLI (standard format: "Token #number")
@@ -64,27 +67,9 @@ fn build_footers(args: &Args, analysis: &ConventionalAnalysis) -> Vec<String> {
       footers.push(format!("Refs #{}", issue.trim_start_matches('#')));
    }
 
-   // Add issue refs from analysis if not already in CLI args
-   for issue_ref in &analysis.issue_refs {
-      let normalized_ref = issue_ref.trim_start_matches('#').to_lowercase();
-      let already_present = args.fixes.iter().any(|f| {
-         f.trim_start_matches('#')
-            .eq_ignore_ascii_case(&normalized_ref)
-      }) || args.closes.iter().any(|f| {
-         f.trim_start_matches('#')
-            .eq_ignore_ascii_case(&normalized_ref)
-      }) || args.resolves.iter().any(|f| {
-         f.trim_start_matches('#')
-            .eq_ignore_ascii_case(&normalized_ref)
-      }) || args.refs.iter().any(|r| {
-         r.trim_start_matches('#')
-            .eq_ignore_ascii_case(&normalized_ref)
-      });
-
-      if !already_present {
-         footers.push(format!("Refs {issue_ref}"));
-      }
-   }
+   // Issue refs are now inlined in body items, so we don't add them as separate
+   // footers The analysis.issue_refs field is kept for backward compatibility
+   // but not used
 
    // Add breaking change footer if requested
    if args.breaking {
@@ -111,6 +96,28 @@ fn run_generation(config: &CommitConfig, args: &Args) -> Result<ConventionalComm
       diff
    };
 
+   // Get recent commits for style consistency
+   let (recent_commits_str, common_scopes_str) = match get_recent_commits(&args.dir, 10) {
+      Ok(commits) if !commits.is_empty() => {
+         let commits_display = commits.join("\n");
+
+         let scopes = get_common_scopes(&args.dir, 100)
+            .ok()
+            .filter(|s| !s.is_empty())
+            .map(|scopes| {
+               scopes
+                  .iter()
+                  .take(10)
+                  .map(|(scope, count)| format!("{scope} ({count})"))
+                  .collect::<Vec<_>>()
+                  .join(", ")
+            });
+
+         (Some(commits_display), scopes)
+      },
+      _ => (None, None),
+   };
+
    // Generate conventional commit analysis
    println!("Generating conventional commit analysis...");
    let context = if args.context.is_empty() {
@@ -120,12 +127,17 @@ fn run_generation(config: &CommitConfig, args: &Args) -> Result<ConventionalComm
    };
    let (scope_candidates_str, _is_wide) =
       extract_scope_candidates(&args.mode, args.target.as_deref(), &args.dir, config)?;
+   let ctx = AnalysisContext {
+      user_context:   context.as_deref(),
+      recent_commits: recent_commits_str.as_deref(),
+      common_scopes:  common_scopes_str.as_deref(),
+   };
    let analysis = generate_conventional_analysis(
       &stat,
       &diff,
       &config.analysis_model,
-      context.as_deref(),
       &scope_candidates_str,
+      &ctx,
       config,
    )?;
 
@@ -153,7 +165,7 @@ fn run_generation(config: &CommitConfig, args: &Args) -> Result<ConventionalComm
       },
    };
 
-   let footers = build_footers(args, &analysis);
+   let footers = build_footers(args);
 
    Ok(ConventionalCommit {
       commit_type: analysis.commit_type,
@@ -414,8 +426,6 @@ fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-   use types::{CommitType, Scope};
-
    use super::*;
 
    // ========== build_footers Tests ==========
@@ -423,30 +433,14 @@ mod tests {
    #[test]
    fn test_build_footers_empty() {
       let args = Args::default();
-
-      let analysis = ConventionalAnalysis {
-         commit_type: CommitType::new("feat").unwrap(),
-         scope:       None,
-         body:        vec![],
-         issue_refs:  vec![],
-      };
-
-      let footers = build_footers(&args, &analysis);
+      let footers = build_footers(&args);
       assert_eq!(footers, Vec::<String>::new());
    }
 
    #[test]
    fn test_build_footers_cli_fixes() {
       let args = Args { fixes: vec!["123".to_string(), "#456".to_string()], ..Default::default() };
-
-      let analysis = ConventionalAnalysis {
-         commit_type: CommitType::new("fix").unwrap(),
-         scope:       None,
-         body:        vec![],
-         issue_refs:  vec![],
-      };
-
-      let footers = build_footers(&args, &analysis);
+      let footers = build_footers(&args);
       assert_eq!(footers, vec!["Fixes #123", "Fixes #456"]);
    }
 
@@ -460,60 +454,21 @@ mod tests {
          ..Default::default()
       };
 
-      let analysis = ConventionalAnalysis {
-         commit_type: CommitType::new("feat").unwrap(),
-         scope:       None,
-         body:        vec![],
-         issue_refs:  vec![],
-      };
-
-      let footers = build_footers(&args, &analysis);
+      let footers = build_footers(&args);
       assert_eq!(footers, vec!["Fixes #1", "Closes #2", "Resolves #3", "Refs #4"]);
    }
 
    #[test]
-   fn test_build_footers_analysis_refs_no_duplicates() {
+   fn test_build_footers_cli_only() {
       let args = Args { fixes: vec!["123".to_string()], ..Default::default() };
-
-      let analysis = ConventionalAnalysis {
-         commit_type: CommitType::new("fix").unwrap(),
-         scope:       None,
-         body:        vec![],
-         issue_refs:  vec!["#123".to_string(), "#456".to_string()],
-      };
-
-      let footers = build_footers(&args, &analysis);
-      // #123 is already in CLI fixes, so should only have Fixes #123 and Refs #456
-      assert_eq!(footers, vec!["Fixes #123", "Refs #456"]);
-   }
-
-   #[test]
-   fn test_build_footers_analysis_refs_only() {
-      let args = Args::default();
-
-      let analysis = ConventionalAnalysis {
-         commit_type: CommitType::new("feat").unwrap(),
-         scope:       None,
-         body:        vec![],
-         issue_refs:  vec!["#789".to_string()],
-      };
-
-      let footers = build_footers(&args, &analysis);
-      assert_eq!(footers, vec!["Refs #789"]);
+      let footers = build_footers(&args);
+      assert_eq!(footers, vec!["Fixes #123"]);
    }
 
    #[test]
    fn test_build_footers_breaking_change() {
       let args = Args { breaking: true, ..Default::default() };
-
-      let analysis = ConventionalAnalysis {
-         commit_type: CommitType::new("feat").unwrap(),
-         scope:       None,
-         body:        vec![],
-         issue_refs:  vec![],
-      };
-
-      let footers = build_footers(&args, &analysis);
+      let footers = build_footers(&args);
       assert_eq!(footers, vec!["BREAKING CHANGE: This commit introduces breaking changes"]);
    }
 
@@ -526,18 +481,10 @@ mod tests {
          ..Default::default()
       };
 
-      let analysis = ConventionalAnalysis {
-         commit_type: CommitType::new("feat").unwrap(),
-         scope:       Some(Scope::new("api").unwrap()),
-         body:        vec!["detail 1.".to_string()],
-         issue_refs:  vec!["#300".to_string()],
-      };
-
-      let footers = build_footers(&args, &analysis);
+      let footers = build_footers(&args);
       assert_eq!(footers, vec![
          "Fixes #100",
          "Refs #200",
-         "Refs #300",
          "BREAKING CHANGE: This commit introduces breaking changes"
       ]);
    }

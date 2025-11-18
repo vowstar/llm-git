@@ -231,6 +231,122 @@ impl ScopeAnalyzer {
       let candidates = analyzer.build_scope_candidates();
       (candidates, analyzer.total_lines)
    }
+
+   /// Analyze wide changes to detect cross-cutting patterns
+   pub fn analyze_wide_change(numstat: &str) -> Option<String> {
+      let lines: Vec<&str> = numstat.lines().collect();
+      if lines.is_empty() {
+         return None;
+      }
+
+      // Extract file paths from numstat
+      let paths: Vec<&str> = lines
+         .iter()
+         .filter_map(|line| {
+            let parts: Vec<&str> = line.split('\t').collect();
+            if parts.len() >= 3 {
+               Some(parts[2])
+            } else {
+               None
+            }
+         })
+         .collect();
+
+      if paths.is_empty() {
+         return None;
+      }
+
+      // Count file types
+      let total = paths.len();
+      let mut md_count = 0;
+      let mut test_count = 0;
+      let mut config_count = 0;
+      let mut has_cargo_toml = false;
+      let mut has_package_json = false;
+
+      // Track patterns
+      let mut error_keywords = 0;
+      let mut type_keywords = 0;
+
+      for path in &paths {
+         // File extension analysis
+         if std::path::Path::new(path)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
+         {
+            md_count += 1;
+         }
+         if path.contains("/test") || path.contains("_test.") || path.ends_with("_test.rs") {
+            test_count += 1;
+         }
+         if std::path::Path::new(path).extension().is_some_and(|ext| {
+            ext.eq_ignore_ascii_case("toml")
+               || ext.eq_ignore_ascii_case("yaml")
+               || ext.eq_ignore_ascii_case("yml")
+               || ext.eq_ignore_ascii_case("json")
+         }) {
+            config_count += 1;
+         }
+
+         // Dependency files
+         if path.contains("Cargo.toml") {
+            has_cargo_toml = true;
+         }
+         if path.contains("package.json") {
+            has_package_json = true;
+         }
+
+         // Pattern keywords in paths
+         let lower_path = path.to_lowercase();
+         if lower_path.contains("error")
+            || lower_path.contains("result")
+            || lower_path.contains("err")
+         {
+            error_keywords += 1;
+         }
+         if lower_path.contains("type")
+            || lower_path.contains("struct")
+            || lower_path.contains("enum")
+         {
+            type_keywords += 1;
+         }
+      }
+
+      // Detection heuristics (ordered by specificity)
+
+      // 1. Dependency updates (high confidence)
+      if has_cargo_toml || has_package_json {
+         return Some("deps".to_string());
+      }
+
+      // 2. Documentation updates (>70% .md files)
+      if md_count * 100 / total > 70 {
+         return Some("docs".to_string());
+      }
+
+      // 3. Test updates (>60% test files)
+      if test_count * 100 / total > 60 {
+         return Some("tests".to_string());
+      }
+
+      // 4. Error handling migration (>40% files with error keywords)
+      if error_keywords * 100 / total > 40 {
+         return Some("error-handling".to_string());
+      }
+
+      // 5. Type migration (>40% files with type keywords)
+      if type_keywords * 100 / total > 40 {
+         return Some("type-refactor".to_string());
+      }
+
+      // 6. Config/tooling updates (>50% config files)
+      if config_count * 100 / total > 50 {
+         return Some("config".to_string());
+      }
+
+      // No clear pattern detected
+      None
+   }
 }
 
 /// Extract candidate scopes from git diff --numstat output
@@ -285,7 +401,18 @@ pub fn extract_scope_candidates(
    let is_wide = ScopeAnalyzer::is_wide_change(&candidates, config);
 
    if is_wide {
-      return Ok(("(none - multi-component change)".to_string(), true));
+      // Try to detect a pattern if wide_change_abstract is enabled
+      let scope_str = if config.wide_change_abstract {
+         if let Some(pattern) = ScopeAnalyzer::analyze_wide_change(&numstat) {
+            format!("(cross-cutting: {pattern})")
+         } else {
+            "(none - multi-component change)".to_string()
+         }
+      } else {
+         "(none - multi-component change)".to_string()
+      };
+
+      return Ok((scope_str, true));
    }
 
    // Format suggested scopes with weights for prompt (keep top 5, prefer 2-segment
@@ -691,5 +818,74 @@ mod tests {
       assert_eq!(candidates[1].path, "api");
       assert_eq!(candidates[2].path, "api/client");
       assert!((candidates[2].confidence - 36.0).abs() < 0.001);
+   }
+
+   // Tests for analyze_wide_change()
+   #[test]
+   fn test_analyze_wide_change_dependency_updates() {
+      let numstat = "10\t5\tCargo.toml\n20\t10\tsrc/lib.rs\n5\t3\tsrc/api.rs";
+      let result = ScopeAnalyzer::analyze_wide_change(numstat);
+      assert_eq!(result, Some("deps".to_string()));
+   }
+
+   #[test]
+   fn test_analyze_wide_change_documentation() {
+      let numstat =
+         "50\t20\tREADME.md\n30\t10\tdocs/guide.md\n20\t5\tdocs/api.md\n5\t2\tsrc/lib.rs";
+      let result = ScopeAnalyzer::analyze_wide_change(numstat);
+      assert_eq!(result, Some("docs".to_string()));
+   }
+
+   #[test]
+   fn test_analyze_wide_change_tests() {
+      let numstat = "10\t5\tsrc/api_test.rs\n15\t8\tsrc/client_test.rs\n20\t10\ttests/\
+                     integration_test.rs\n5\t2\tsrc/lib.rs";
+      let result = ScopeAnalyzer::analyze_wide_change(numstat);
+      assert_eq!(result, Some("tests".to_string()));
+   }
+
+   #[test]
+   fn test_analyze_wide_change_error_handling() {
+      let numstat =
+         "10\t5\tsrc/error.rs\n15\t8\tsrc/result.rs\n20\t10\tsrc/error_types.rs\n5\t2\tsrc/lib.rs";
+      let result = ScopeAnalyzer::analyze_wide_change(numstat);
+      assert_eq!(result, Some("error-handling".to_string()));
+   }
+
+   #[test]
+   fn test_analyze_wide_change_type_refactor() {
+      let numstat =
+         "10\t5\tsrc/types.rs\n15\t8\tsrc/structs.rs\n20\t10\tsrc/enums.rs\n5\t2\tsrc/lib.rs";
+      let result = ScopeAnalyzer::analyze_wide_change(numstat);
+      assert_eq!(result, Some("type-refactor".to_string()));
+   }
+
+   #[test]
+   fn test_analyze_wide_change_config() {
+      let numstat =
+         "10\t5\tconfig.toml\n15\t8\tsettings.yaml\n20\t10\tconfig.json\n5\t2\tsrc/lib.rs";
+      let result = ScopeAnalyzer::analyze_wide_change(numstat);
+      assert_eq!(result, Some("config".to_string()));
+   }
+
+   #[test]
+   fn test_analyze_wide_change_no_pattern() {
+      let numstat = "10\t5\tsrc/foo.rs\n15\t8\tsrc/bar.rs\n20\t10\tsrc/baz.rs";
+      let result = ScopeAnalyzer::analyze_wide_change(numstat);
+      assert_eq!(result, None);
+   }
+
+   #[test]
+   fn test_analyze_wide_change_empty() {
+      let numstat = "";
+      let result = ScopeAnalyzer::analyze_wide_change(numstat);
+      assert_eq!(result, None);
+   }
+
+   #[test]
+   fn test_analyze_wide_change_package_json() {
+      let numstat = "10\t5\tpackage.json\n20\t10\tsrc/index.js\n5\t3\tsrc/utils.js";
+      let result = ScopeAnalyzer::analyze_wide_change(numstat);
+      assert_eq!(result, Some("deps".to_string()));
    }
 }

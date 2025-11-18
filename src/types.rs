@@ -379,11 +379,99 @@ pub struct CommitMetadata {
    pub tree_hash:       String,
 }
 
+/// Selector for which hunks to include in a file change
+#[derive(Debug, Clone)]
+pub enum HunkSelector {
+   /// All changes in the file
+   All,
+   /// Specific line ranges (1-indexed, inclusive)
+   Lines { start: usize, end: usize },
+   /// Search pattern to match lines
+   Search { pattern: String },
+}
+
+impl Serialize for HunkSelector {
+   fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+   where
+      S: serde::Serializer,
+   {
+      match self {
+         Self::All => serializer.serialize_str("ALL"),
+         Self::Lines { start, end } => {
+            use serde::ser::SerializeStruct;
+            let mut state = serializer.serialize_struct("Lines", 2)?;
+            state.serialize_field("start", start)?;
+            state.serialize_field("end", end)?;
+            state.end()
+         },
+         Self::Search { pattern } => {
+            use serde::ser::SerializeStruct;
+            let mut state = serializer.serialize_struct("Search", 1)?;
+            state.serialize_field("pattern", pattern)?;
+            state.end()
+         },
+      }
+   }
+}
+
+impl<'de> Deserialize<'de> for HunkSelector {
+   fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+   where
+      D: serde::Deserializer<'de>,
+   {
+      let value = Value::deserialize(deserializer)?;
+
+      match value {
+         // String "ALL" -> All variant
+         Value::String(s) if s.eq_ignore_ascii_case("all") => Ok(Self::All),
+         // Old format: hunk headers like "@@ -10,5 +10,7 @@" -> treat as search pattern
+         Value::String(s) if s.starts_with("@@") => Ok(Self::Search { pattern: s }),
+         // New format: line range string like "10-20"
+         Value::String(s) if s.contains('-') => {
+            let parts: Vec<&str> = s.split('-').collect();
+            if parts.len() == 2 {
+               let start = parts[0].trim().parse().map_err(serde::de::Error::custom)?;
+               let end = parts[1].trim().parse().map_err(serde::de::Error::custom)?;
+               Ok(Self::Lines { start, end })
+            } else {
+               Err(serde::de::Error::custom(format!("Invalid line range format: {s}")))
+            }
+         },
+         // Object with start/end fields -> Lines
+         Value::Object(map) if map.contains_key("start") && map.contains_key("end") => {
+            let start = map
+               .get("start")
+               .and_then(|v| v.as_u64())
+               .ok_or_else(|| serde::de::Error::custom("Invalid start field"))?
+               as usize;
+            let end = map
+               .get("end")
+               .and_then(|v| v.as_u64())
+               .ok_or_else(|| serde::de::Error::custom("Invalid end field"))?
+               as usize;
+            Ok(Self::Lines { start, end })
+         },
+         // Object with pattern field -> Search
+         Value::Object(map) if map.contains_key("pattern") => {
+            let pattern = map
+               .get("pattern")
+               .and_then(|v| v.as_str())
+               .ok_or_else(|| serde::de::Error::custom("Invalid pattern field"))?
+               .to_string();
+            Ok(Self::Search { pattern })
+         },
+         // Fallback: treat other strings as search patterns
+         Value::String(s) => Ok(Self::Search { pattern: s }),
+         _ => Err(serde::de::Error::custom("Invalid HunkSelector format")),
+      }
+   }
+}
+
 /// File change with specific hunks
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileChange {
    pub path:  String,
-   pub hunks: Vec<String>, // Hunk headers (e.g., "@@ -10,5 +10,7 @@") or "ALL" for entire file
+   pub hunks: Vec<HunkSelector>,
 }
 
 /// Represents a logical group of changes for compose mode
@@ -547,10 +635,6 @@ pub struct Args {
    #[arg(long, requires = "compose")]
    pub compose_preview: bool,
 
-   /// Allow interactive refinement of splits
-   #[arg(long, requires = "compose")]
-   pub compose_interactive: bool,
-
    /// Maximum number of commits to create
    #[arg(long, requires = "compose")]
    pub compose_max_commits: Option<usize>,
@@ -588,7 +672,6 @@ impl Default for Args {
          exclude_old_message:     false,
          compose:                 false,
          compose_preview:         false,
-         compose_interactive:     false,
          compose_max_commits:     None,
          compose_test_after_each: false,
       }
@@ -1077,6 +1160,138 @@ mod tests {
             "Case {idx}: Expected scope to be None, got {:?}",
             analysis.scope
          );
+      }
+   }
+
+   // ========== HunkSelector Tests ==========
+
+   #[test]
+   fn test_hunk_selector_deserialize_all() {
+      let json = r#""ALL""#;
+      let selector: HunkSelector = serde_json::from_str(json).unwrap();
+      assert!(matches!(selector, HunkSelector::All));
+   }
+
+   #[test]
+   fn test_hunk_selector_deserialize_lines_object() {
+      let json = r#"{"start": 10, "end": 20}"#;
+      let selector: HunkSelector = serde_json::from_str(json).unwrap();
+      match selector {
+         HunkSelector::Lines { start, end } => {
+            assert_eq!(start, 10);
+            assert_eq!(end, 20);
+         },
+         _ => panic!("Expected Lines variant"),
+      }
+   }
+
+   #[test]
+   fn test_hunk_selector_deserialize_lines_string() {
+      let json = r#""10-20""#;
+      let selector: HunkSelector = serde_json::from_str(json).unwrap();
+      match selector {
+         HunkSelector::Lines { start, end } => {
+            assert_eq!(start, 10);
+            assert_eq!(end, 20);
+         },
+         _ => panic!("Expected Lines variant"),
+      }
+   }
+
+   #[test]
+   fn test_hunk_selector_deserialize_search_pattern() {
+      let json = r#"{"pattern": "fn main"}"#;
+      let selector: HunkSelector = serde_json::from_str(json).unwrap();
+      match selector {
+         HunkSelector::Search { pattern } => {
+            assert_eq!(pattern, "fn main");
+         },
+         _ => panic!("Expected Search variant"),
+      }
+   }
+
+   #[test]
+   fn test_hunk_selector_deserialize_old_format_hunk_header() {
+      // Old format: hunk headers like "@@ -10,5 +10,7 @@" should be treated as search
+      let json = r#""@@ -10,5 +10,7 @@""#;
+      let selector: HunkSelector = serde_json::from_str(json).unwrap();
+      match selector {
+         HunkSelector::Search { pattern } => {
+            assert_eq!(pattern, "@@ -10,5 +10,7 @@");
+         },
+         _ => panic!("Expected Search variant for old hunk header format"),
+      }
+   }
+
+   #[test]
+   fn test_hunk_selector_serialize_all() {
+      let selector = HunkSelector::All;
+      let json = serde_json::to_string(&selector).unwrap();
+      assert_eq!(json, r#""ALL""#);
+   }
+
+   #[test]
+   fn test_hunk_selector_serialize_lines() {
+      let selector = HunkSelector::Lines { start: 10, end: 20 };
+      let json = serde_json::to_value(&selector).unwrap();
+      assert_eq!(json["start"], 10);
+      assert_eq!(json["end"], 20);
+   }
+
+   #[test]
+   fn test_file_change_deserialize_with_all() {
+      let json = r#"{"path": "src/main.rs", "hunks": ["ALL"]}"#;
+      let change: FileChange = serde_json::from_str(json).unwrap();
+      assert_eq!(change.path, "src/main.rs");
+      assert_eq!(change.hunks.len(), 1);
+      assert!(matches!(change.hunks[0], HunkSelector::All));
+   }
+
+   #[test]
+   fn test_file_change_deserialize_with_line_ranges() {
+      let json = r#"{"path": "src/main.rs", "hunks": [{"start": 10, "end": 20}, {"start": 50, "end": 60}]}"#;
+      let change: FileChange = serde_json::from_str(json).unwrap();
+      assert_eq!(change.path, "src/main.rs");
+      assert_eq!(change.hunks.len(), 2);
+
+      match &change.hunks[0] {
+         HunkSelector::Lines { start, end } => {
+            assert_eq!(*start, 10);
+            assert_eq!(*end, 20);
+         },
+         _ => panic!("Expected Lines variant"),
+      }
+
+      match &change.hunks[1] {
+         HunkSelector::Lines { start, end } => {
+            assert_eq!(*start, 50);
+            assert_eq!(*end, 60);
+         },
+         _ => panic!("Expected Lines variant"),
+      }
+   }
+
+   #[test]
+   fn test_file_change_deserialize_mixed_formats() {
+      // Mix of string line ranges and object line ranges
+      let json = r#"{"path": "src/main.rs", "hunks": ["10-20", {"start": 50, "end": 60}]}"#;
+      let change: FileChange = serde_json::from_str(json).unwrap();
+      assert_eq!(change.hunks.len(), 2);
+
+      match &change.hunks[0] {
+         HunkSelector::Lines { start, end } => {
+            assert_eq!(*start, 10);
+            assert_eq!(*end, 20);
+         },
+         _ => panic!("Expected Lines variant"),
+      }
+
+      match &change.hunks[1] {
+         HunkSelector::Lines { start, end } => {
+            assert_eq!(*start, 50);
+            assert_eq!(*end, 60);
+         },
+         _ => panic!("Expected Lines variant"),
       }
    }
 }

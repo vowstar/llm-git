@@ -1,6 +1,11 @@
 /// Diff parsing and smart truncation logic
 use crate::config::CommitConfig;
 
+/// Estimate token count from text (rough approximation: ~4 chars per token)
+pub const fn estimate_tokens(text: &str) -> usize {
+   text.len() / 4
+}
+
 #[derive(Debug, Clone)]
 pub struct FileDiff {
    pub filename:  String,
@@ -14,6 +19,10 @@ pub struct FileDiff {
 impl FileDiff {
    pub const fn size(&self) -> usize {
       self.header.len() + self.content.len()
+   }
+
+   pub const fn token_estimate(&self) -> usize {
+      self.size() / 4
    }
 
    pub fn priority(&self, config: &CommitConfig) -> i32 {
@@ -188,7 +197,7 @@ pub fn parse_diff(diff: &str) -> Vec<FileDiff> {
    file_diffs
 }
 
-/// Smart truncation of git diff
+/// Smart truncation of git diff with token-aware budgeting
 pub fn smart_truncate_diff(diff: &str, max_length: usize, config: &CommitConfig) -> String {
    let mut file_diffs = parse_diff(diff);
 
@@ -208,10 +217,19 @@ pub fn smart_truncate_diff(diff: &str, max_length: usize, config: &CommitConfig)
    // Sort by priority (highest first)
    file_diffs.sort_by_key(|f| -f.priority(config));
 
-   // Calculate total size
+   // Calculate total size and token estimate
    let total_size: usize = file_diffs.iter().map(|f| f.size()).sum();
+   let total_tokens: usize = file_diffs.iter().map(|f| f.token_estimate()).sum();
 
-   if total_size <= max_length {
+   // Use token budget if it's more restrictive than character budget
+   let effective_max = if total_tokens > config.max_diff_tokens {
+      // Convert token budget to character budget
+      config.max_diff_tokens * 4
+   } else {
+      max_length
+   };
+
+   if total_size <= effective_max {
       // Everything fits, reconstruct the diff
       return reconstruct_diff(&file_diffs);
    }
@@ -225,9 +243,9 @@ pub fn smart_truncate_diff(diff: &str, max_length: usize, config: &CommitConfig)
    let header_only_size: usize = file_diffs.iter().map(|f| f.header.len() + 20).sum();
    let total_files = file_diffs.len();
 
-   if header_only_size <= max_length {
+   if header_only_size <= effective_max {
       // We can fit all headers, now distribute remaining space for content
-      let remaining_space = max_length - header_only_size;
+      let remaining_space = effective_max - header_only_size;
       let space_per_file = if file_diffs.is_empty() {
          0
       } else {
@@ -263,13 +281,13 @@ pub fn smart_truncate_diff(diff: &str, max_length: usize, config: &CommitConfig)
          }
 
          let file_size = file.size();
-         if current_size + file_size <= max_length {
+         if current_size + file_size <= effective_max {
             current_size += file_size;
             included_files.push(file);
-         } else if current_size < max_length / 2 && file.priority(config) >= 50 {
+         } else if current_size < effective_max / 2 && file.priority(config) >= 50 {
             // If we haven't used half the space and this is important, truncate and include
             // it
-            let remaining = max_length - current_size;
+            let remaining = effective_max - current_size;
             file.truncate(remaining.saturating_sub(100)); // Leave some space
             included_files.push(file);
             break;

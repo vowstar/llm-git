@@ -28,12 +28,17 @@ pub struct CommitConfig {
    pub max_retries:             u32,
    pub initial_backoff_ms:      u64,
    pub max_diff_length:         usize,
+   pub max_diff_tokens:         usize,
    pub wide_change_threshold:   f32,
    pub temperature:             f32,
    pub analysis_model:          String,
    pub summary_model:           String,
    pub excluded_files:          Vec<String>,
    pub low_priority_extensions: Vec<String>,
+
+   /// Maximum token budget for commit message detail points (approx 4
+   /// chars/token)
+   pub max_detail_tokens: usize,
 
    /// Prompt variant for analysis phase (e.g., "default")
    #[serde(default = "default_analysis_prompt_variant")]
@@ -42,6 +47,10 @@ pub struct CommitConfig {
    /// Prompt variant for summary phase (e.g., "default")
    #[serde(default = "default_summary_prompt_variant")]
    pub summary_prompt_variant: String,
+
+   /// Enable abstract summaries for wide changes (cross-cutting refactors)
+   #[serde(default = "default_wide_change_abstract")]
+   pub wide_change_abstract: bool,
 
    /// Exclude old commit message from context in commit mode (rewrite mode uses
    /// this)
@@ -65,6 +74,10 @@ fn default_summary_prompt_variant() -> String {
    "default".to_string()
 }
 
+const fn default_wide_change_abstract() -> bool {
+   true
+}
+
 const fn default_exclude_old_message() -> bool {
    true
 }
@@ -83,6 +96,7 @@ impl Default for CommitConfig {
          max_retries:             3,
          initial_backoff_ms:      1000,
          max_diff_length:         100000, // Increased to handle larger refactors better
+         max_diff_tokens:         25000,  // ~100K chars = 25K tokens (4 chars/token estimate)
          wide_change_threshold:   0.50,
          temperature:             0.2, // Low temperature for consistent structured output
          analysis_model:          "claude-sonnet-4.5".to_string(),
@@ -111,8 +125,10 @@ impl Default for CommitConfig {
             ".tmp".to_string(),
             ".bak".to_string(),
          ],
+         max_detail_tokens:       200,
          analysis_prompt_variant: default_analysis_prompt_variant(),
          summary_prompt_variant:  default_summary_prompt_variant(),
+         wide_change_abstract:    default_wide_change_abstract(),
          exclude_old_message:     default_exclude_old_message(),
          analysis_prompt:         String::new(),
          summary_prompt:          String::new(),

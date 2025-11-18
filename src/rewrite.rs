@@ -5,7 +5,7 @@ use rayon::prelude::*;
 
 use crate::{
    analysis::extract_scope_candidates,
-   api::{generate_conventional_analysis, generate_summary_from_analysis},
+   api::{AnalysisContext, generate_conventional_analysis, generate_summary_from_analysis},
    config::CommitConfig,
    diff::smart_truncate_diff,
    error::{CommitGenError, Result},
@@ -175,12 +175,17 @@ fn generate_for_commit(
       extract_scope_candidates(&Mode::Commit, Some(&commit.hash), dir, config)?;
 
    // Phase 1: Analysis
+   let ctx = AnalysisContext {
+      user_context:   None, // No user context for bulk rewrite
+      recent_commits: None, // No recent commits for rewrite mode
+      common_scopes:  None, // No common scopes for rewrite mode
+   };
    let analysis = generate_conventional_analysis(
       &stat,
       &diff,
       &config.analysis_model,
-      None, // No user context for bulk rewrite
       &scope_candidates_str,
+      &ctx,
       config,
    )?;
 
@@ -195,16 +200,14 @@ fn generate_for_commit(
    )?;
 
    // Build ConventionalCommit
+   // Issue refs are now inlined in body items, so footers are empty (unless added
+   // by CLI)
    let mut commit_msg = ConventionalCommit {
       commit_type: analysis.commit_type,
       scope: analysis.scope,
       summary,
       body: analysis.body,
-      footers: analysis
-         .issue_refs
-         .into_iter()
-         .map(|r| format!("Refs {r}"))
-         .collect(),
+      footers: vec![], // Issue refs are inlined in body items now
    };
 
    // Post-process and validate

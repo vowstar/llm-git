@@ -11,6 +11,17 @@ use crate::{
 
 // Prompts now loaded from config instead of compile-time constants
 
+/// Optional context information for commit analysis
+#[derive(Default)]
+pub struct AnalysisContext<'a> {
+   /// User-provided context
+   pub user_context:   Option<&'a str>,
+   /// Recent commits for style learning
+   pub recent_commits: Option<&'a str>,
+   /// Common scopes for suggestions
+   pub common_scopes:  Option<&'a str>,
+}
+
 /// Build HTTP client with timeouts from config
 fn build_client(config: &CommitConfig) -> reqwest::blocking::Client {
    reqwest::blocking::Client::builder()
@@ -140,8 +151,8 @@ pub fn generate_conventional_analysis<'a>(
    stat: &'a str,
    diff: &'a str,
    model_name: &'a str,
-   context: Option<&'a str>,
    scope_candidates_str: &'a str,
+   ctx: &AnalysisContext<'a>,
    config: &'a CommitConfig,
 ) -> Result<ConventionalAnalysis> {
    retry_api_call(config, move || {
@@ -204,10 +215,12 @@ pub fn generate_conventional_analysis<'a>(
                   stat,
                   diff,
                   scope_candidates_str,
+                  ctx.recent_commits,
+                  ctx.common_scopes,
                )?;
 
-               if let Some(ctx) = context {
-                  prompt = format!("ADDITIONAL CONTEXT FROM USER:\n{ctx}\n\n{prompt}");
+               if let Some(user_ctx) = ctx.user_context {
+                  prompt = format!("ADDITIONAL CONTEXT FROM USER:\n{user_ctx}\n\n{prompt}");
                }
 
                prompt

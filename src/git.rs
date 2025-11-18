@@ -426,6 +426,72 @@ pub fn create_backup_branch(dir: &str) -> Result<String> {
    Ok(backup_name)
 }
 
+/// Get recent commit messages for style consistency (last N commits)
+pub fn get_recent_commits(dir: &str, count: usize) -> Result<Vec<String>> {
+   let output = Command::new("git")
+      .args(["log", &format!("-{count}"), "--pretty=format:%s"])
+      .current_dir(dir)
+      .output()
+      .map_err(|e| CommitGenError::GitError(format!("Failed to run git log: {e}")))?;
+
+   if !output.status.success() {
+      let stderr = String::from_utf8_lossy(&output.stderr);
+      return Err(CommitGenError::GitError(format!("git log failed: {stderr}")));
+   }
+
+   let stdout = String::from_utf8_lossy(&output.stdout);
+   Ok(stdout.lines().map(|s| s.to_string()).collect())
+}
+
+/// Extract common scopes from git history by parsing commit messages
+pub fn get_common_scopes(dir: &str, limit: usize) -> Result<Vec<(String, usize)>> {
+   let output = Command::new("git")
+      .args(["log", &format!("-{limit}"), "--pretty=format:%s"])
+      .current_dir(dir)
+      .output()
+      .map_err(|e| CommitGenError::GitError(format!("Failed to run git log: {e}")))?;
+
+   if !output.status.success() {
+      let stderr = String::from_utf8_lossy(&output.stderr);
+      return Err(CommitGenError::GitError(format!("git log failed: {stderr}")));
+   }
+
+   let stdout = String::from_utf8_lossy(&output.stdout);
+   let mut scope_counts: HashMap<String, usize> = HashMap::new();
+
+   // Parse conventional commit format: type(scope): message
+   for line in stdout.lines() {
+      if let Some(scope) = extract_scope_from_commit(line) {
+         *scope_counts.entry(scope).or_insert(0) += 1;
+      }
+   }
+
+   // Sort by frequency (descending)
+   let mut scopes: Vec<(String, usize)> = scope_counts.into_iter().collect();
+   scopes.sort_by(|a, b| b.1.cmp(&a.1));
+
+   Ok(scopes)
+}
+
+/// Extract scope from a conventional commit message
+fn extract_scope_from_commit(commit_msg: &str) -> Option<String> {
+   // Match pattern: type(scope): message
+   let parts: Vec<&str> = commit_msg.splitn(2, ':').collect();
+   if parts.len() < 2 {
+      return None;
+   }
+
+   let prefix = parts[0];
+   if let Some(scope_start) = prefix.find('(')
+      && let Some(scope_end) = prefix.find(')')
+      && scope_start < scope_end
+   {
+      return Some(prefix[scope_start + 1..scope_end].to_string());
+   }
+
+   None
+}
+
 /// Rewrite git history with new commit messages
 pub fn rewrite_history(
    commits: &[CommitMetadata],

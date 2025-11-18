@@ -235,6 +235,8 @@ pub fn render_analysis_prompt(
    stat: &str,
    diff: &str,
    scope_candidates: &str,
+   recent_commits: Option<&str>,
+   common_scopes: Option<&str>,
 ) -> Result<String> {
    // Try to load template dynamically (supports user-added templates)
    let template_content = load_template_file("analysis", variant)?;
@@ -244,6 +246,12 @@ pub fn render_analysis_prompt(
    context.insert("stat", stat);
    context.insert("diff", diff);
    context.insert("scope_candidates", scope_candidates);
+   if let Some(commits) = recent_commits {
+      context.insert("recent_commits", commits);
+   }
+   if let Some(scopes) = common_scopes {
+      context.insert("common_scopes", scopes);
+   }
 
    // Render using render_str for dynamic templates
    let mut tera = TERA.lock();

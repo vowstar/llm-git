@@ -108,7 +108,6 @@ llm-git Fixed regression from PR #123      # Add context (trailing text)
 ```bash
 llm-git --compose                          # Compose changes into multiple atomic commits
 llm-git --compose --compose-preview        # Preview proposed splits without committing
-llm-git --compose --compose-interactive    # Interactive refinement of splits
 llm-git --compose --compose-max-commits 5  # Limit number of commits
 llm-git --compose --compose-test-after-each # Run tests after each commit
 ```

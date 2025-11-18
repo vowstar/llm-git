@@ -114,14 +114,27 @@ pub fn normalize_unicode(text: &str) -> String {
       .replace(['\u{200B}', '\u{200C}', '\u{200D}', '\u{FEFF}'], "") // zero-width no-break space (BOM)
 }
 
-/// Cap detail points to top 3-4 by priority (keyword scoring + length)
-pub fn cap_details(details: &mut Vec<String>, max_count: usize) {
-   if details.len() <= max_count {
+/// Estimate token count for text (rough approximation: 1 token ≈ 4 chars)
+const fn estimate_tokens(text: &str) -> usize {
+   text.len().div_ceil(4) // Round up
+}
+
+/// Cap detail points by token budget instead of hard count
+/// Keeps high-priority details until budget exhausted
+pub fn cap_details(details: &mut Vec<String>, max_tokens: usize) {
+   if details.is_empty() {
       return;
    }
 
+   // Calculate total tokens
+   let total_tokens: usize = details.iter().map(|d| estimate_tokens(d)).sum();
+
+   if total_tokens <= max_tokens {
+      return; // Under budget, keep all
+   }
+
    // Score by priority keywords and length
-   let mut scored: Vec<(usize, i32, &String)> = details
+   let mut scored: Vec<(usize, i32, usize, &String)> = details
       .iter()
       .enumerate()
       .map(|(idx, detail)| {
@@ -164,19 +177,25 @@ pub fn cap_details(details: &mut Vec<String>, max_count: usize) {
          // Add length component (capped contribution to avoid favoring verbosity)
          score += (detail.len() / 20).min(10) as i32;
 
-         (idx, score, detail)
+         let tokens = estimate_tokens(detail);
+         (idx, score, tokens, detail)
       })
       .collect();
 
    // Sort by score descending
    scored.sort_by(|a, b| b.1.cmp(&a.1));
 
-   // Keep top max_count indices
-   let mut keep_indices: Vec<usize> = scored
-      .iter()
-      .take(max_count)
-      .map(|(idx, ..)| *idx)
-      .collect();
+   // Keep details until budget exhausted
+   let mut budget_remaining = max_tokens;
+   let mut keep_indices: Vec<usize> = Vec::new();
+
+   for (idx, _score, tokens, _detail) in scored {
+      if tokens <= budget_remaining {
+         keep_indices.push(idx);
+         budget_remaining -= tokens;
+      }
+   }
+
    keep_indices.sort_unstable(); // Preserve original order
 
    // Filter details
@@ -262,7 +281,7 @@ pub fn normalize_summary_verb(summary: &mut String, commit_type: &str) {
 }
 
 /// Post-process conventional commit message to fix common issues
-pub fn post_process_commit_message(msg: &mut ConventionalCommit, _config: &CommitConfig) {
+pub fn post_process_commit_message(msg: &mut ConventionalCommit, config: &CommitConfig) {
    // CommitType and Scope are already normalized to lowercase in their
    // constructors No need to re-normalize them here
 
@@ -371,8 +390,8 @@ pub fn post_process_commit_message(msg: &mut ConventionalCommit, _config: &Commi
    // Remove empty body items
    msg.body.retain(|item| !item.trim().is_empty());
 
-   // Cap details to top 4 by priority
-   cap_details(&mut msg.body, 4);
+   // Cap details by token budget
+   cap_details(&mut msg.body, config.max_detail_tokens);
 }
 
 /// Format `ConventionalCommit` as a single string for display and commit
@@ -581,16 +600,17 @@ mod tests {
       assert_eq!(s, "added");
    }
 
-   // cap_details tests
+   // cap_details tests (budget-based)
    #[test]
-   fn test_cap_details_below_max() {
+   fn test_cap_details_under_budget() {
       let mut details = vec!["first".to_string(), "second".to_string(), "third".to_string()];
-      cap_details(&mut details, 6);
+      let tokens: usize = details.iter().map(|d| estimate_tokens(d)).sum();
+      cap_details(&mut details, tokens + 100);
       assert_eq!(details.len(), 3);
    }
 
    #[test]
-   fn test_cap_details_at_max() {
+   fn test_cap_details_at_budget() {
       let mut details = vec![
          "one".to_string(),
          "two".to_string(),
@@ -599,7 +619,8 @@ mod tests {
          "five".to_string(),
          "six".to_string(),
       ];
-      cap_details(&mut details, 6);
+      let tokens: usize = details.iter().map(|d| estimate_tokens(d)).sum();
+      cap_details(&mut details, tokens);
       assert_eq!(details.len(), 6);
    }
 
@@ -614,7 +635,8 @@ mod tests {
          "fifth change".to_string(),
          "sixth change".to_string(),
       ];
-      cap_details(&mut details, 4);
+      // Budget for ~4 typical items (15 chars each = ~4 tokens, 4*4 = 16 tokens)
+      cap_details(&mut details, 60);
       assert!(details.iter().any(|d| d.contains("security")));
    }
 
@@ -628,7 +650,8 @@ mod tests {
          "fourth change".to_string(),
          "fifth change".to_string(),
       ];
-      cap_details(&mut details, 3);
+      // Budget for ~3 typical items
+      cap_details(&mut details, 40);
       assert!(details.iter().any(|d| d.contains("performance")));
    }
 
@@ -641,7 +664,8 @@ mod tests {
          "another internal change".to_string(),
          "yet another change".to_string(),
       ];
-      cap_details(&mut details, 3);
+      // Budget for ~3 items
+      cap_details(&mut details, 50);
       assert!(details.iter().any(|d| d.contains("API")));
    }
 
@@ -654,7 +678,8 @@ mod tests {
          "performance improvement".to_string(),
          "fifth".to_string(),
       ];
-      cap_details(&mut details, 3);
+      // Budget for ~3 items
+      cap_details(&mut details, 50);
       // Should preserve relative order of kept items
       let security_idx = details.iter().position(|d| d.contains("security"));
       let perf_idx = details.iter().position(|d| d.contains("performance"));
@@ -664,7 +689,7 @@ mod tests {
    #[test]
    fn test_cap_details_empty_list() {
       let mut details: Vec<String> = vec![];
-      cap_details(&mut details, 4);
+      cap_details(&mut details, 100);
       assert_eq!(details.len(), 0);
    }
 
@@ -677,8 +702,58 @@ mod tests {
          "third change".to_string(),
          "fourth change".to_string(),
       ];
-      cap_details(&mut details, 3);
+      // Budget for ~3 items
+      cap_details(&mut details, 50);
       assert!(details.iter().any(|d| d.contains("breaking")));
+   }
+
+   #[test]
+   fn test_cap_details_budget_prefers_short_high_priority() {
+      // 6 short high-priority items should fit, but 2 long low-priority shouldn't
+      let mut details = vec![
+         "security fix".to_string(),     // ~12 chars, ~3 tokens, score 100
+         "bug fix".to_string(),          // ~7 chars, ~2 tokens, score 70
+         "API change".to_string(),       // ~10 chars, ~3 tokens, score 50
+         "performance gain".to_string(), // ~16 chars, ~4 tokens, score 80
+         "breaking change".to_string(),  // ~15 chars, ~4 tokens, score 90
+         "user feature".to_string(),     // ~12 chars, ~3 tokens, score 40
+         "This is a very long internal refactoring detail that adds no user value".to_string(), /* ~73 chars, ~19 tokens, score 0 */
+         "Another extremely long low priority change description here".to_string(), /* ~61 chars, ~16 tokens, score 0 */
+      ];
+      // Budget: 30 tokens (enough for all 6 short items, not enough for long ones)
+      cap_details(&mut details, 30);
+      // Should keep short high-priority items
+      assert!(details.iter().any(|d| d.contains("security")));
+      assert!(details.iter().any(|d| d.contains("breaking")));
+      // Should drop long low-priority items
+      assert!(!details.iter().any(|d| d.contains("very long internal")));
+   }
+
+   #[test]
+   fn test_cap_details_budget_allows_variable_count() {
+      // With same budget, should fit more short items or fewer long items
+      let short_details = vec![
+         "fix A".to_string(),
+         "fix B".to_string(),
+         "fix C".to_string(),
+         "fix D".to_string(),
+         "fix E".to_string(),
+         "fix F".to_string(),
+      ];
+      let long_details = vec![
+         "Fixed a critical security vulnerability in authentication".to_string(),
+         "Implemented comprehensive performance optimization".to_string(),
+         "Added extensive API documentation and examples".to_string(),
+      ];
+
+      let mut short = short_details;
+      let mut long = long_details;
+
+      cap_details(&mut short, 50); // Should fit all 6 short items (~2 tokens each)
+      cap_details(&mut long, 50); // Should fit only 2-3 long items (~13-15 tokens each)
+
+      assert!(short.len() >= 5); // Most short items fit
+      assert!(long.len() <= 3); // Fewer long items fit
    }
 
    // format_commit_message tests

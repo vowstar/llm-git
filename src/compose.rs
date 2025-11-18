@@ -3,7 +3,7 @@ use std::{path::Path, sync::OnceLock, time::Duration};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-   api::generate_conventional_analysis,
+   api::{AnalysisContext, generate_conventional_analysis},
    config::CommitConfig,
    diff::smart_truncate_diff,
    error::{CommitGenError, Result},
@@ -113,26 +113,27 @@ const COMPOSE_PROMPT: &str = r#"Split this git diff into 1-{MAX_COMMITS} logical
 3. **Prefer fewer groups**: Default to 1-3 commits. Only split when changes are truly independent/separable.
 4. **Group related**: Implementation + tests go together. Refactoring + usage updates go together.
 5. **Dependencies**: Use indices. Group 2 depending on Group 1 means: dependencies: [0].
-6. **Hunk selection**:
+6. **Hunk selection** (IMPORTANT - Use line numbers, NOT hunk headers):
    - If entire file → hunks: ["ALL"]
-   - If partial → copy exact hunk headers from diff above (format: "@@ -10,5 +10,7 @@")
-   - Double-check headers exist in diff
+   - If partial → specify line ranges: hunks: [{start: 10, end: 25}, {start: 50, end: 60}]
+   - Line numbers are 1-indexed from the ORIGINAL file (look at "-" lines in diff)
+   - You can specify multiple ranges for discontinuous changes in one file
 
 ## Good Example (2 independent changes)
 groups: [
   {
     changes: [
       {path: "src/api.rs", hunks: ["ALL"]},
-      {path: "tests/api_test.rs", hunks: ["@@ -15,3 +15,8 @@"]}
+      {path: "tests/api_test.rs", hunks: [{start: 15, end: 23}]}
     ],
     type: "feat", scope: "api", rationale: "add user endpoint with test",
     dependencies: []
   },
   {
     changes: [
-      {path: "src/utils.rs", hunks: ["ALL"]}
+      {path: "src/utils.rs", hunks: [{start: 42, end: 48}, {start: 100, end: 105}]}
     ],
-    type: "fix", scope: "utils", rationale: "fix string parsing bug",
+    type: "fix", scope: "utils", rationale: "fix string parsing bug in two locations",
     dependencies: []
   }
 ]
@@ -316,8 +317,20 @@ pub fn analyze_for_compose(
                                  },
                                  "hunks": {
                                     "type": "array",
-                                    "description": "Hunk headers from diff (e.g., ['@@ -10,5 +10,7 @@']) or ['ALL'] for entire file",
-                                    "items": { "type": "string" }
+                                    "description": "Either ['ALL'] for entire file, or line range objects: [{start: 10, end: 25}]. Line numbers are 1-indexed from ORIGINAL file.",
+                                    "items": {
+                                       "oneOf": [
+                                          { "type": "string", "const": "ALL" },
+                                          {
+                                             "type": "object",
+                                             "properties": {
+                                                "start": { "type": "integer", "minimum": 1 },
+                                                "end": { "type": "integer", "minimum": 1 }
+                                             },
+                                             "required": ["start", "end"]
+                                          }
+                                       ]
+                                    }
                                  }
                               },
                               "required": ["path", "hunks"]
@@ -568,15 +581,33 @@ fn validate_compose_groups(groups: &[ChangeGroup], full_diff: &str) -> Result<()
          covered_files.insert(change.path.clone());
          *file_coverage.entry(change.path.clone()).or_insert(0) += 1;
 
-         // Warn about invalid hunk headers
-         if !(change.hunks.len() == 1 && change.hunks[0] == "ALL") {
-            for hunk in &change.hunks {
-               if !hunk.starts_with("@@") {
-                  eprintln!(
-                     "⚠ Warning: Group {idx} references invalid hunk header '{hunk}' in {}",
-                     change.path
-                  );
-               }
+         // Validate hunk selectors
+         for selector in &change.hunks {
+            match selector {
+               crate::types::HunkSelector::All => {},
+               crate::types::HunkSelector::Lines { start, end } => {
+                  if start > end {
+                     eprintln!(
+                        "⚠ Warning: Group {idx} has invalid line range {start}-{end} in {}",
+                        change.path
+                     );
+                  }
+                  if *start == 0 {
+                     eprintln!(
+                        "⚠ Warning: Group {idx} has line range starting at 0 (should be \
+                         1-indexed) in {}",
+                        change.path
+                     );
+                  }
+               },
+               crate::types::HunkSelector::Search { pattern } => {
+                  if pattern.is_empty() {
+                     eprintln!(
+                        "⚠ Warning: Group {idx} has empty search pattern in {}",
+                        change.path
+                     );
+                  }
+               },
             }
          }
       }
@@ -697,14 +728,13 @@ pub fn execute_compose(
 
       // Generate commit message using existing infrastructure
       println!("  Generating commit message...");
-      let message_analysis = generate_conventional_analysis(
-         &stat,
-         &diff,
-         &config.analysis_model,
-         Some(&group.rationale),
-         "",
-         config,
-      )?;
+      let ctx = AnalysisContext {
+         user_context:   Some(&group.rationale),
+         recent_commits: None, // No recent commits for compose mode
+         common_scopes:  None, // No common scopes for compose mode
+      };
+      let message_analysis =
+         generate_conventional_analysis(&stat, &diff, &config.analysis_model, "", &ctx, config)?;
 
       let ConventionalAnalysis {
          commit_type: analysis_commit_type,
@@ -913,10 +943,31 @@ fn run_compose_round(args: &Args, config: &CommitConfig, round: usize) -> Result
       );
       println!("   Changes:");
       for change in &group.changes {
-         if change.hunks.len() == 1 && change.hunks[0] == "ALL" {
+         let is_all =
+            change.hunks.len() == 1 && matches!(&change.hunks[0], crate::types::HunkSelector::All);
+
+         if is_all {
             println!("     - {} (all changes)", change.path);
          } else {
-            println!("     - {} ({} hunks)", change.path, change.hunks.len());
+            // Display summary of selectors
+            let summary: Vec<String> = change
+               .hunks
+               .iter()
+               .map(|s| match s {
+                  crate::types::HunkSelector::All => "all".to_string(),
+                  crate::types::HunkSelector::Lines { start, end } => {
+                     format!("lines {start}-{end}")
+                  },
+                  crate::types::HunkSelector::Search { pattern } => {
+                     if pattern.len() > 20 {
+                        format!("search '{}'...", &pattern[..20])
+                     } else {
+                        format!("search '{pattern}'")
+                     }
+                  },
+               })
+               .collect();
+            println!("     - {} ({})", change.path, summary.join(", "));
          }
       }
       if !group.dependencies.is_empty() {
@@ -928,8 +979,6 @@ fn run_compose_round(args: &Args, config: &CommitConfig, round: usize) -> Result
       println!("\n✓ Preview complete (use --compose without --compose-preview to execute)");
       return Ok(());
    }
-
-   // TODO: Interactive mode would go here
 
    println!("\nExecuting compose (round {round})...");
    let hashes = execute_compose(&analysis, config, args)?;
