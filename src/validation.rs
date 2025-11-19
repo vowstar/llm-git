@@ -320,14 +320,20 @@ pub fn check_type_scope_consistency(msg: &ConventionalCommit, stat: &str) {
    if commit_type == "docs" {
       let has_docs = stat.lines().any(|line| {
          let path = line.split('|').next().unwrap_or("").trim();
-         std::path::Path::new(&path)
+         let is_doc_file = std::path::Path::new(&path)
             .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
+            .is_some_and(|ext| {
+               matches!(
+                  ext.to_ascii_lowercase().as_str(),
+                  "md" | "mdx" | "adoc" | "asciidoc" | "rst" | "txt" | "org" | "tex" | "pod"
+               )
+            });
+         is_doc_file
             || path.to_lowercase().contains("/docs/")
             || path.to_lowercase().contains("readme")
       });
       if !has_docs {
-         eprintln!("Warning: Commit type 'docs' but no documentation files (.md) changed");
+         eprintln!("Warning: Commit type 'docs' but no documentation files changed");
       }
    }
 
