@@ -685,6 +685,49 @@ where
    Ok(value_to_string_vec(value))
 }
 
+fn extract_strings_from_malformed_json(input: &str) -> Vec<String> {
+   let mut strings = Vec::new();
+   let mut chars = input.chars();
+
+   while let Some(c) = chars.next() {
+      if c == '"' {
+         let mut current_string = String::new();
+         let mut escaped = false;
+
+         for inner_c in chars.by_ref() {
+            if escaped {
+               current_string.push(inner_c);
+               escaped = false;
+            } else if inner_c == '\\' {
+               current_string.push(inner_c);
+               escaped = true;
+            } else if inner_c == '"' {
+               break;
+            } else {
+               current_string.push(inner_c);
+            }
+         }
+
+         // Try to parse as JSON string first
+         let json_candidate = format!("\"{}\"", current_string);
+         if let Ok(parsed) = serde_json::from_str::<String>(&json_candidate) {
+            strings.push(parsed);
+         } else {
+            // Fallback: Replace newlines with space and try again
+            let sanitized = current_string.replace(['\n', '\r'], " ");
+            let json_sanitized = format!("\"{}\"", sanitized);
+            if let Ok(parsed) = serde_json::from_str::<String>(&json_sanitized) {
+               strings.push(parsed);
+            } else {
+               // Ultimate fallback: raw content
+               strings.push(sanitized);
+            }
+         }
+      }
+   }
+   strings
+}
+
 fn value_to_string_vec(value: Value) -> Vec<String> {
    match value {
       Value::Null => Vec::new(),
@@ -710,6 +753,22 @@ fn value_to_string_vec(value: Value) -> Vec<String> {
                   .into_iter()
                   .flat_map(|v| value_to_string_vec(v).into_iter())
                   .collect();
+            }
+
+            // Fallback: try sanitizing newlines (LLM sometimes outputs literal newlines in JSON strings)
+            let sanitized = cleaned.replace(['\n', '\r'], " ");
+            if let Ok(Value::Array(arr)) = serde_json::from_str::<Value>(&sanitized) {
+               return arr
+                  .into_iter()
+                  .flat_map(|v| value_to_string_vec(v).into_iter())
+                  .collect();
+            }
+
+            // Final fallback: Try manual string extraction for truncated/malformed arrays
+            // e.g. ["Item 1", "Item 2".
+            let extracted = extract_strings_from_malformed_json(trimmed);
+            if !extracted.is_empty() {
+               return extracted;
             }
          }
 
@@ -1164,6 +1223,39 @@ mod tests {
    }
 
    // ========== HunkSelector Tests ==========
+
+   #[test]
+   fn test_body_array_with_newline_in_string() {
+       // This reproduces the issue where literal newlines in the string prevent JSON parsing
+       // The input mimics what happens when LLM returns a JSON string with unescaped newlines
+       let raw_str = "[\"Item 1\", \"Item\n2\"]";
+       let value = serde_json::Value::String(raw_str.to_string());
+
+       // desired behavior: should clean the newline and parse as array
+       let result = value_to_string_vec(value);
+
+       // It should be ["Item 1", "Item 2"] (newline replaced by space)
+       assert_eq!(result.len(), 2);
+       assert_eq!(result[0], "Item 1");
+       // Depending on implementation, it might be "Item 2" or "Item  2" etc.
+       // For now let's assume we replace with space.
+       assert_eq!(result[1], "Item 2");
+   }
+
+   #[test]
+   fn test_body_array_malformed_truncated() {
+       // This reproduces the issue where the array is truncated or has trailing punctuation
+       let raw_str = "[\"Refactored finance...\", \"Added automatic detection...\".";
+       let value = serde_json::Value::String(raw_str.to_string());
+
+       let result = value_to_string_vec(value);
+
+       // Should recover 2 items
+       assert_eq!(result.len(), 2);
+       assert_eq!(result[0], "Refactored finance...");
+       assert_eq!(result[1], "Added automatic detection...");
+   }
+
 
    #[test]
    fn test_hunk_selector_deserialize_all() {
