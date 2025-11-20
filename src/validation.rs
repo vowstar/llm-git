@@ -322,6 +322,7 @@ pub fn check_type_scope_consistency(msg: &ConventionalCommit, stat: &str) {
          let path = line.split('|').next().unwrap_or("").trim();
          let is_doc_file = std::path::Path::new(&path)
             .extension()
+            .and_then(|ext| ext.to_str())
             .is_some_and(|ext| {
                matches!(
                   ext.to_ascii_lowercase().as_str(),

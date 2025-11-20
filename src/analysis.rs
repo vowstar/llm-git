@@ -11,8 +11,29 @@ use crate::{
 };
 
 /// Placeholder dirs to skip when building two-segment scopes
-const PLACEHOLDER_DIRS: &[&str] =
-   &["src", "lib", "bin", "crates", "include", "tests", "test", "benches", "examples", "docs"];
+/// These are organizational directories that rarely represent meaningful scopes
+const PLACEHOLDER_DIRS: &[&str] = &[
+   // Rust conventions
+   "src",
+   "lib",
+   "bin",
+   "crates",
+   "benches",
+   "examples",
+   // Go conventions
+   "internal",
+   "pkg",
+   // C/C++ conventions
+   "include",
+   // Testing
+   "tests",
+   "test",
+   // Documentation
+   "docs",
+   // Generic organizational
+   "packages",
+   "modules",
+];
 
 /// Directories to skip entirely when extracting scopes
 const SKIP_DIRS: &[&str] =
@@ -555,6 +576,34 @@ mod tests {
       let comps = ScopeAnalyzer::extract_components_from_path("src/api/client.rs");
       // "client.rs" is a file, so skipped; "api" and "src" are dirs
       assert!(comps.contains(&"api".to_string()));
+   }
+
+   #[test]
+   fn test_extract_components_go_internal() {
+      // Go projects: internal/ is placeholder, extract actual module
+      let comps = ScopeAnalyzer::extract_components_from_path("internal/agent/worker.go");
+      assert_eq!(comps, vec!["agent"]);
+   }
+
+   #[test]
+   fn test_extract_components_go_internal_nested() {
+      // Go projects: internal/foo/bar/baz.go → extract "foo" and "foo/bar"
+      let comps = ScopeAnalyzer::extract_components_from_path("internal/config/parser/json.go");
+      assert_eq!(comps, vec!["config", "config/parser"]);
+   }
+
+   #[test]
+   fn test_extract_components_go_pkg() {
+      // Go projects: pkg/ is also a placeholder
+      let comps = ScopeAnalyzer::extract_components_from_path("pkg/util/strings.go");
+      assert_eq!(comps, vec!["util"]);
+   }
+
+   #[test]
+   fn test_extract_components_monorepo_packages() {
+      // Monorepos: packages/ is placeholder
+      let comps = ScopeAnalyzer::extract_components_from_path("packages/core/index.ts");
+      assert_eq!(comps, vec!["core"]);
    }
 
    // Tests for process_numstat_line()
