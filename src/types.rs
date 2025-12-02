@@ -835,8 +835,8 @@ mod tests {
       // Claude short names
       assert_eq!(resolve_model_name("sonnet"), "claude-sonnet-4.5");
       assert_eq!(resolve_model_name("s"), "claude-sonnet-4.5");
-      assert_eq!(resolve_model_name("opus"), "claude-opus-4.1");
-      assert_eq!(resolve_model_name("o"), "claude-opus-4.1");
+      assert_eq!(resolve_model_name("opus"), "claude-opus-4.5");
+      assert_eq!(resolve_model_name("o"), "claude-opus-4.5");
       assert_eq!(resolve_model_name("haiku"), "claude-haiku-4-5");
       assert_eq!(resolve_model_name("h"), "claude-haiku-4-5");
 
