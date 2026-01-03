@@ -10,34 +10,6 @@ You will analyze a git diff to determine the most accurate commit type and scope
 </commit_types>
 {% endif %}
 
-<diff_statistics>
-{{ stat }}
-</diff_statistics>
-
-<scope_candidates>
-{{ scope_candidates }}
-</scope_candidates>
-{% if recent_commits %}
-
-<recent_commits>
-{{ recent_commits }}
-</recent_commits>
-
-Use these recent commits as few-shot examples to match this project's commit style and conventions.
-{% endif %}
-{% if common_scopes %}
-
-<common_scopes>
-{{ common_scopes }}
-</common_scopes>
-
-SCOPE SELECTION RULE: Prefer existing scopes from history over new scopes. Only introduce new scopes when the change clearly targets a component not in history.
-{% endif %}
-
-<diff>
-{{ diff }}
-</diff>
-
 <instructions>
 ## Step 1: Determine Scope
 
@@ -58,7 +30,7 @@ FORBIDDEN SCOPES (use null instead):
 ## Step 2: Generate Details (0-6 items, prefer 3-4)
 
 Each detail MUST:
-1. Start with past-tense verb: added, fixed, updated, refactored, removed, replaced, improved, implemented, migrated, renamed, moved, merged, split, extracted, restructured, reorganized, consolidated, simplified, optimized, documented, tested, changed, introduced, deprecated, deleted, corrected, enhanced, reverted
+1. Start with a past-tense verb
 2. End with a period
 3. Explain WHY, not just WHAT
 4. Use precise nouns (module/file/API names, not generic terms)
@@ -186,3 +158,33 @@ Description: Simple dependency update (minimal details)
 </examples>
 
 Analyze the diff and call the function.
+
+--------------------
+
+<diff_statistics>
+{{ stat }}
+</diff_statistics>
+
+<scope_candidates>
+{{ scope_candidates }}
+</scope_candidates>
+{% if recent_commits %}
+
+<recent_commits>
+{{ recent_commits }}
+</recent_commits>
+
+Use these recent commits as few-shot examples to match this project's commit style and conventions.
+{% endif %}
+{% if common_scopes %}
+
+<common_scopes>
+{{ common_scopes }}
+</common_scopes>
+
+SCOPE SELECTION RULE: Prefer existing scopes from history over new scopes. Only introduce new scopes when the change clearly targets a component not in history.
+{% endif %}
+
+<diff>
+{{ diff }}
+</diff>

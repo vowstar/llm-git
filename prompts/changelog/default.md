@@ -5,20 +5,6 @@ Changelog location: {{ changelog_path }}
 {% if is_package_changelog %}Package-scoped changelog — do NOT prefix entries with package name.{% endif %}
 </context>
 
-<diff_summary>
-{{ stat }}
-</diff_summary>
-
-<diff>
-{{ diff }}
-</diff>
-{% if existing_entries %}
-
-<existing_entries>
-{{ existing_entries }}
-</existing_entries>
-{% endif %}
-
 <instructions>
 1. Analyze the diff for user-visible changes
 2. {% if existing_entries %}Skip any change already covered in <existing_entries>{% else %}Identify changelog-worthy modifications{% endif %}
@@ -96,3 +82,19 @@ If no changelog-worthy changes:
 {"entries": {}}
 ```
 </output_format>
+
+--------------------
+{% if existing_entries %}
+
+<existing_entries>
+{{ existing_entries }}
+</existing_entries>
+{% endif %}
+
+<diff_summary>
+{{ stat }}
+</diff_summary>
+
+<diff>
+{{ diff }}
+</diff>

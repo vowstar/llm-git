@@ -6,35 +6,18 @@ Your output becomes the text after the colon in the conventional commit message.
 {% if user_context %}User-provided context MUST be incorporated: {{ user_context }}{% endif %}
 </context>
 
-<data>
-<detail_points>
-{{ details }}
-</detail_points>
-
-<diff_stat>
-{{ stat }}
-</diff_stat>
-</data>
-
 <instructions>
 1. Synthesize detail points into a single focused summary
-2. Start with a past-tense verb from the allowed list (lowercase, no leading adjectives)
+2. Start with a lowercase past-tense verb (no leading adjectives)
 3. Include WHY when it adds essential context, not just WHAT changed
 4. Be specific: name the subsystem, file, or artifact when relevant
 5. Stay under {{ chars }} characters
 6. No trailing period
 </instructions>
 
-<allowed_verbs>
-added, fixed, updated, refactored, removed, replaced, improved, implemented,
-migrated, renamed, moved, merged, split, extracted, restructured, reorganized,
-consolidated, simplified, optimized, documented, tested, changed, introduced,
-deprecated, deleted, corrected, enhanced, reverted
-</allowed_verbs>
-
 <constraints>
 - Do NOT repeat the commit type "{{ commit_type }}" as your verb
-  (if type="refactor", use: restructured, reorganized, migrated, simplified, etc.)
+  (e.g., type="refactor" → use: restructured, reorganized, migrated, simplified, etc.)
 - No leading adjectives before the verb ("quickly added..." ❌)
 - No filler words: "comprehensive", "various", "several", "improved", "enhanced"
 - No conjunctions cramming multiple concepts
@@ -84,3 +67,13 @@ These are BAD because they lack motivation or specificity:
 </anti_patterns>
 
 Output ONLY the description text. No explanation.
+
+--------------------
+
+<detail_points>
+{{ details }}
+</detail_points>
+
+<diff_stat>
+{{ stat }}
+</diff_stat>
