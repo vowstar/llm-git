@@ -718,7 +718,7 @@ pub fn execute_compose(
          group.rationale
       );
       println!("  Type: {}", style::commit_type(&group.commit_type.to_string()));
-      if let Some(ref scope) = group.scope {
+      if let Some(scope) = &group.scope {
          println!("  Scope: {}", style::scope(&scope.to_string()));
       }
       let files: Vec<String> = group.changes.iter().map(|c| c.path.clone()).collect();

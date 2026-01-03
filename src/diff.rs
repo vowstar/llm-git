@@ -141,7 +141,7 @@ pub fn parse_diff(diff: &str) -> Vec<FileDiff> {
             is_binary: false,
          });
          in_diff_header = true;
-      } else if let Some(ref mut file) = current_file {
+      } else if let Some(file) = &mut current_file {
          if line.starts_with("Binary files") {
             file.is_binary = true;
             file.header.reserve(line.len() + 1);

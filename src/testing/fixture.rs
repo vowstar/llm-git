@@ -225,7 +225,7 @@ impl Fixture {
       fs::write(input_dir.join("context.toml"), context_content)?;
 
       // Save golden output if present
-      if let Some(ref golden) = self.golden {
+      if let Some(golden) = &self.golden {
          let analysis_json = serde_json::to_string_pretty(&golden.analysis)?;
          fs::write(golden_dir.join("analysis.json"), analysis_json)?;
          fs::write(golden_dir.join("final.txt"), &golden.final_message)?;

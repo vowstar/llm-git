@@ -64,7 +64,7 @@ impl TokenCounter {
 
    /// Synchronous token count (tiktoken or char estimate).
    pub fn count_sync(&self, text: &str) -> usize {
-      if let Some(ref encoder) = self.tiktoken {
+      if let Some(encoder) = &self.tiktoken {
          encoder.encode_with_special_tokens(text).len()
       } else {
          text.len() / 4

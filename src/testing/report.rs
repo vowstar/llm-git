@@ -1,6 +1,6 @@
 //! HTML report generation for fixture test results
 
-use std::{fs, path::Path};
+use std::{fmt::Write, fs, path::Path};
 
 use crate::error::Result;
 
@@ -22,7 +22,8 @@ fn render_report(results: &[RunResult], fixtures: &[Fixture], summary: &TestSumm
    let mut html = String::new();
 
    // Header
-   html.push_str(&format!(
+   let _ = write!(
+      html,
       r#"<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -214,7 +215,7 @@ fn render_report(results: &[RunResult], fixtures: &[Fixture], summary: &TestSumm
       summary.failed,
       summary.no_golden,
       summary.errors
-   ));
+   );
 
    // Render each fixture result
    for result in results {
@@ -248,7 +249,7 @@ fn render_report(results: &[RunResult], fixtures: &[Fixture], summary: &TestSumm
 fn render_fixture_result(result: &RunResult, fixture: Option<&Fixture>) -> String {
    let (status_class, status_text) = if result.error.is_some() {
       ("error", "Error")
-   } else if let Some(ref cmp) = result.comparison {
+   } else if let Some(cmp) = &result.comparison {
       if cmp.passed {
          ("passed", "Passed")
       } else {
@@ -258,11 +259,7 @@ fn render_fixture_result(result: &RunResult, fixture: Option<&Fixture>) -> Strin
       ("no-golden", "No Golden")
    };
 
-   let fixture_class = if result.error.is_some() || matches!(&result.comparison, Some(c) if !c.passed) {
-      format!("fixture {status_class}")
-   } else {
-      format!("fixture {status_class}")
-   };
+   let fixture_class = format!("fixture {status_class}");
 
    let mut html = format!(
       r#"
@@ -277,17 +274,14 @@ fn render_fixture_result(result: &RunResult, fixture: Option<&Fixture>) -> Strin
    );
 
    // Error case
-   if let Some(ref err) = result.error {
-      html.push_str(&format!(
-         r#"<div class="error-message">{}</div>"#,
-         html_escape(err)
-      ));
+   if let Some(err) = &result.error {
+      let _ = write!(html, r#"<div class="error-message">{}</div>"#, html_escape(err));
       html.push_str("</div></div>\n");
       return html;
    }
 
    // Comparison details
-   if let Some(ref cmp) = result.comparison {
+   if let Some(cmp) = &result.comparison {
       html.push_str(&render_comparison(cmp, result, fixture));
    } else {
       // No golden - show actual output
@@ -307,50 +301,45 @@ fn render_comparison(cmp: &CompareResult, result: &RunResult, fixture: Option<&F
    // Type
    let type_class = if cmp.type_match { "diff-match" } else { "diff-mismatch" };
    if let Some(f) = fixture
-      && let Some(ref golden) = f.golden {
-         html.push_str(&format!(
-            r#"<div class="diff-row">
+      && let Some(golden) = &f.golden
+   {
+      let _ = write!(
+         html,
+         r#"<div class="diff-row">
                <span class="diff-label">Type:</span>
                <span class="diff-value {}">
                   {}<span class="diff-arrow">→</span>{}
                </span>
             </div>"#,
-            type_class,
-            golden.analysis.commit_type.as_str(),
-            result.analysis.commit_type.as_str()
-         ));
-      }
+         type_class,
+         golden.analysis.commit_type.as_str(),
+         result.analysis.commit_type.as_str()
+      );
+   }
 
    // Scope
    let scope_class = if cmp.scope_match { "diff-match" } else { "diff-mismatch" };
-   if let Some(ref diff) = cmp.scope_diff {
-      html.push_str(&format!(
-         r#"<div class="diff-row">
+   let scope_value = match &cmp.scope_diff {
+      Some(diff) => html_escape(diff),
+      None => result.analysis.scope.as_ref().map_or_else(|| "(none)".to_string(), |s| s.to_string()),
+   };
+   let _ = write!(
+      html,
+      r#"<div class="diff-row">
             <span class="diff-label">Scope:</span>
-            <span class="diff-value {}">{}</span>
-         </div>"#,
-         scope_class,
-         html_escape(diff)
-      ));
-   } else {
-      html.push_str(&format!(
-         r#"<div class="diff-row">
-            <span class="diff-label">Scope:</span>
-            <span class="diff-value {}">{}</span>
-         </div>"#,
-         scope_class,
-         result.analysis.scope.as_ref().map_or("(none)", |s| s.as_str())
-      ));
-   }
+            <span class="diff-value {scope_class}">{scope_value}</span>
+         </div>"#
+   );
 
    // Detail counts
-   html.push_str(&format!(
+   let _ = write!(
+      html,
       r#"<div class="diff-row">
          <span class="diff-label">Details:</span>
          <span class="diff-value">{} golden → {} actual</span>
       </div>"#,
       cmp.golden_detail_count, cmp.actual_detail_count
-   ));
+   );
 
    html.push_str("</div>");
 
@@ -359,24 +348,27 @@ fn render_comparison(cmp: &CompareResult, result: &RunResult, fixture: Option<&F
 
    // Golden column
    if let Some(f) = fixture
-      && let Some(ref golden) = f.golden {
-         html.push_str(&format!(
-            r#"<div class="comparison-column">
+      && let Some(golden) = &f.golden
+   {
+      let _ = write!(
+         html,
+         r#"<div class="comparison-column">
                <h3 class="golden">Golden (Expected)</h3>
                <div class="message-box">{}</div>
             </div>"#,
-            html_escape(&golden.final_message)
-         ));
-      }
+         html_escape(&golden.final_message)
+      );
+   }
 
    // Actual column
-   html.push_str(&format!(
+   let _ = write!(
+      html,
       r#"<div class="comparison-column">
          <h3 class="actual">Actual (Current)</h3>
          <div class="message-box">{}</div>
       </div>"#,
       html_escape(&result.final_message)
-   ));
+   );
 
    html.push_str("</div>");
 

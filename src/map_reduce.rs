@@ -221,7 +221,7 @@ fn map_single_file(
          .post(format!("{}/chat/completions", config.api_base_url))
          .header("content-type", "application/json");
 
-      if let Some(ref api_key) = config.api_key {
+      if let Some(api_key) = &config.api_key {
          request_builder = request_builder.header("Authorization", format!("Bearer {api_key}"));
       }
 
@@ -326,7 +326,7 @@ pub fn reduce_phase(
          .post(format!("{}/chat/completions", config.api_base_url))
          .header("content-type", "application/json");
 
-      if let Some(ref api_key) = config.api_key {
+      if let Some(api_key) = &config.api_key {
          request_builder = request_builder.header("Authorization", format!("Bearer {api_key}"));
       }
 

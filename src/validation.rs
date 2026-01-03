@@ -197,7 +197,7 @@ pub fn validate_commit_message(msg: &ConventionalCommit, config: &CommitConfig) 
 
    // Validate scope (if present) - Scope type already validates format
    // This is just a double-check, Scope::new() already enforces rules
-   if let Some(ref scope) = msg.scope
+   if let Some(scope) = &msg.scope
       && scope.is_empty()
    {
       return Err(CommitGenError::InvalidScope(
@@ -206,7 +206,7 @@ pub fn validate_commit_message(msg: &ConventionalCommit, config: &CommitConfig) 
    }
 
    // Reject scope if it's just the project/repo name
-   if let Some(ref scope) = msg.scope
+   if let Some(scope) = &msg.scope
       && let Ok(repo_name) = get_repository_name()
    {
       let normalized_scope = normalize_name(scope.as_str());

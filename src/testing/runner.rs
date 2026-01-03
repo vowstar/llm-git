@@ -62,7 +62,7 @@ impl TestRunner {
 
       for name in fixture_names {
          // Apply filter if set
-         if let Some(ref pattern) = self.filter
+         if let Some(pattern) = &self.filter
             && !name.contains(pattern) {
                continue;
             }
@@ -165,7 +165,7 @@ impl TestRunner {
       let mut updated = Vec::new();
 
       for name in fixture_names {
-         if let Some(ref pattern) = self.filter
+         if let Some(pattern) = &self.filter
             && !name.contains(pattern) {
                continue;
             }
@@ -208,13 +208,12 @@ pub struct TestSummary {
 impl TestSummary {
    /// Create summary from results
    pub fn from_results(results: &[RunResult]) -> Self {
-      let mut summary = Self::default();
-      summary.total = results.len();
+      let mut summary = Self { total: results.len(), ..Default::default() };
 
       for result in results {
          if result.error.is_some() {
             summary.errors += 1;
-         } else if let Some(ref cmp) = result.comparison {
+         } else if let Some(cmp) = &result.comparison {
             if cmp.passed {
                summary.passed += 1;
             } else {

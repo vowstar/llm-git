@@ -142,7 +142,7 @@ pub fn run_changelog_flow(args: &crate::types::Args, config: &CommitConfig) -> R
       }
 
       // Save changelog debug output if requested
-      if let Some(ref debug_dir) = args.debug_output {
+      if let Some(debug_dir) = &args.debug_output {
          let _ = std::fs::create_dir_all(debug_dir);
          let changelog_json: HashMap<String, Vec<String>> = new_entries
             .iter()
@@ -241,7 +241,7 @@ fn call_changelog_api(prompt: &str, config: &CommitConfig) -> Result<ChangelogRe
          .post(format!("{}/chat/completions", config.api_base_url))
          .header("content-type", "application/json");
 
-      if let Some(ref api_key) = config.api_key {
+      if let Some(api_key) = &config.api_key {
          request_builder = request_builder.header("Authorization", format!("Bearer {api_key}"));
       }
 

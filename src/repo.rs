@@ -53,7 +53,7 @@ impl RepoMetadata {
       let mut lines = Vec::new();
 
       // Language line
-      if let Some(ref lang) = self.language {
+      if let Some(lang) = &self.language {
          let mut lang_str = lang.clone();
          if self.is_monorepo {
             if let Some(count) = self.package_count {
@@ -66,7 +66,7 @@ impl RepoMetadata {
       }
 
       // Framework line
-      if let Some(ref framework) = self.framework {
+      if let Some(framework) = &self.framework {
          lines.push(format!("Framework: {framework}"));
       }
 

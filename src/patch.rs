@@ -190,7 +190,7 @@ fn parse_file_hunks(file_diff: &str) -> Vec<ParsedHunk> {
                old_line_range: (old_start, old_end),
             });
          }
-      } else if let Some(ref mut hunk) = current_hunk {
+      } else if let Some(hunk) = &mut current_hunk {
          hunk.lines.push(line.to_string());
       }
    }
