@@ -2,10 +2,12 @@
 //!
 //! Respects `NO_COLOR` environment variable and terminal capabilities.
 
-use std::io::{self, Write};
-use std::sync::OnceLock;
-use std::thread;
-use std::time::Duration;
+use std::{
+   io::{self, Write},
+   sync::OnceLock,
+   thread,
+   time::Duration,
+};
 
 use owo_colors::OwoColorize;
 
@@ -20,8 +22,7 @@ pub fn colors_enabled() -> bool {
          return false;
       }
       // Check if stdout is a terminal and supports color
-      supports_color::on(supports_color::Stream::Stdout)
-         .is_some_and(|level| level.has_basic)
+      supports_color::on(supports_color::Stream::Stdout).is_some_and(|level| level.has_basic)
    })
 }
 
@@ -29,28 +30,45 @@ pub fn colors_enabled() -> bool {
 
 /// Success: checkmarks, completed actions (green + bold).
 pub fn success(s: &str) -> String {
-   if colors_enabled() { s.green().bold().to_string() } else { s.to_string() }
+   if colors_enabled() {
+      s.green().bold().to_string()
+   } else {
+      s.to_string()
+   }
 }
 
 /// Warning: soft limit violations, non-fatal issues (yellow).
 pub fn warning(s: &str) -> String {
-   if colors_enabled() { s.yellow().to_string() } else { s.to_string() }
+   if colors_enabled() {
+      s.yellow().to_string()
+   } else {
+      s.to_string()
+   }
 }
 
 /// Error: failures, hard errors (red + bold).
 pub fn error(s: &str) -> String {
-   if colors_enabled() { s.red().bold().to_string() } else { s.to_string() }
+   if colors_enabled() {
+      s.red().bold().to_string()
+   } else {
+      s.to_string()
+   }
 }
 
 /// Info: informational messages (cyan).
 pub fn info(s: &str) -> String {
-   if colors_enabled() { s.cyan().to_string() } else { s.to_string() }
+   if colors_enabled() {
+      s.cyan().to_string()
+   } else {
+      s.to_string()
+   }
 }
 
 /// Print warning message, clearing any active spinner line first.
 ///
-/// This ensures warnings appear on their own line even when a spinner is active,
-/// by writing a carriage return + clear-line escape sequence before the message.
+/// This ensures warnings appear on their own line even when a spinner is
+/// active, by writing a carriage return + clear-line escape sequence before the
+/// message.
 pub fn warn(msg: &str) {
    // Clear current line in case spinner is active (stdout, not stderr)
    print!("\r\x1b[K");
@@ -60,27 +78,47 @@ pub fn warn(msg: &str) {
 
 /// Dim: less important details, file paths (dimmed).
 pub fn dim(s: &str) -> String {
-   if colors_enabled() { s.dimmed().to_string() } else { s.to_string() }
+   if colors_enabled() {
+      s.dimmed().to_string()
+   } else {
+      s.to_string()
+   }
 }
 
 /// Bold: headers, key values.
 pub fn bold(s: &str) -> String {
-   if colors_enabled() { s.bold().to_string() } else { s.to_string() }
+   if colors_enabled() {
+      s.bold().to_string()
+   } else {
+      s.to_string()
+   }
 }
 
 /// Model name styling (magenta).
 pub fn model(s: &str) -> String {
-   if colors_enabled() { s.magenta().to_string() } else { s.to_string() }
+   if colors_enabled() {
+      s.magenta().to_string()
+   } else {
+      s.to_string()
+   }
 }
 
 /// Commit type styling (blue + bold).
 pub fn commit_type(s: &str) -> String {
-   if colors_enabled() { s.blue().bold().to_string() } else { s.to_string() }
+   if colors_enabled() {
+      s.blue().bold().to_string()
+   } else {
+      s.to_string()
+   }
 }
 
 /// Scope styling (cyan).
 pub fn scope(s: &str) -> String {
-   if colors_enabled() { s.cyan().to_string() } else { s.to_string() }
+   if colors_enabled() {
+      s.cyan().to_string()
+   } else {
+      s.to_string()
+   }
 }
 
 /// Get terminal width, capped at 120 columns.
@@ -153,7 +191,11 @@ pub fn boxed_message(title: &str, content: &str, width: usize) -> String {
    out.push(TOP_LEFT);
    out.push_str(&HORIZONTAL.to_string().repeat(left_pad));
    out.push(' ');
-   out.push_str(&if colors_enabled() { bold(title) } else { title.to_string() });
+   out.push_str(&if colors_enabled() {
+      bold(title)
+   } else {
+      title.to_string()
+   });
    out.push(' ');
    out.push_str(&HORIZONTAL.to_string().repeat(right_pad));
    out.push(TOP_RIGHT);
@@ -230,9 +272,13 @@ pub mod icons {
 
 // === Spinner ===
 
-const SPINNER_FRAMES: &[char] = &['\u{280B}', '\u{2819}', '\u{2839}', '\u{2838}', '\u{283C}', '\u{2834}', '\u{2826}', '\u{2827}', '\u{2807}', '\u{280F}'];
+const SPINNER_FRAMES: &[char] = &[
+   '\u{280B}', '\u{2819}', '\u{2839}', '\u{2838}', '\u{283C}', '\u{2834}', '\u{2826}', '\u{2827}',
+   '\u{2807}', '\u{280F}',
+];
 
-/// Run a function with a spinner animation. Falls back to static text if not a TTY.
+/// Run a function with a spinner animation. Falls back to static text if not a
+/// TTY.
 pub fn with_spinner<F, T>(message: &str, f: F) -> T
 where
    F: FnOnce() -> T,
@@ -286,7 +332,11 @@ where
       loop {
          match rx.try_recv() {
             Ok(success) => {
-               let icon = if success { icons::SUCCESS.green().to_string() } else { icons::ERROR.red().to_string() };
+               let icon = if success {
+                  icons::SUCCESS.green().to_string()
+               } else {
+                  icons::ERROR.red().to_string()
+               };
                print!("\r\x1b[K{icon} {msg}\n");
                io::stdout().flush().ok();
                break;

@@ -24,7 +24,7 @@ pub struct FixtureEntry {
    pub description: String,
    /// Tags for filtering (e.g., "large", "map-reduce", "edge-case")
    #[serde(default)]
-   pub tags: Vec<String>,
+   pub tags:        Vec<String>,
 }
 
 impl Manifest {
@@ -35,17 +35,15 @@ impl Manifest {
          return Ok(Self { fixtures: HashMap::new() });
       }
       let content = fs::read_to_string(&path)?;
-      toml::from_str(&content).map_err(|e| {
-         CommitGenError::Other(format!("Failed to parse manifest.toml: {e}"))
-      })
+      toml::from_str(&content)
+         .map_err(|e| CommitGenError::Other(format!("Failed to parse manifest.toml: {e}")))
    }
 
    /// Save manifest to fixtures directory
    pub fn save(&self, fixtures_dir: &Path) -> Result<()> {
       let path = fixtures_dir.join("manifest.toml");
-      let content = toml::to_string_pretty(self).map_err(|e| {
-         CommitGenError::Other(format!("Failed to serialize manifest: {e}"))
-      })?;
+      let content = toml::to_string_pretty(self)
+         .map_err(|e| CommitGenError::Other(format!("Failed to serialize manifest: {e}")))?;
       fs::write(&path, content)?;
       Ok(())
    }
@@ -60,16 +58,16 @@ impl Manifest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FixtureMeta {
    /// Source repository (e.g., "tetra")
-   pub source_repo: String,
+   pub source_repo:   String,
    /// Original commit hash
    pub source_commit: String,
    /// Why this fixture is interesting
-   pub description: String,
+   pub description:   String,
    /// When this fixture was captured
-   pub captured_at: String,
+   pub captured_at:   String,
    /// Tags for categorization
    #[serde(default)]
-   pub tags: Vec<String>,
+   pub tags:          Vec<String>,
 }
 
 /// Context captured for analysis (replaces live git queries)
@@ -77,36 +75,36 @@ pub struct FixtureMeta {
 pub struct FixtureContext {
    /// Style patterns from recent commits
    #[serde(default)]
-   pub recent_commits: Option<String>,
+   pub recent_commits:  Option<String>,
    /// Common scopes in repository
    #[serde(default)]
-   pub common_scopes: Option<String>,
+   pub common_scopes:   Option<String>,
    /// Project metadata
    #[serde(default)]
    pub project_context: Option<String>,
    /// User-provided context
    #[serde(default)]
-   pub user_context: Option<String>,
+   pub user_context:    Option<String>,
 }
 
 /// Input data for a fixture
 #[derive(Debug, Clone)]
 pub struct FixtureInput {
    /// The diff content
-   pub diff: String,
+   pub diff:             String,
    /// The stat content
-   pub stat: String,
+   pub stat:             String,
    /// Pre-computed scope candidates
    pub scope_candidates: String,
    /// Analysis context
-   pub context: FixtureContext,
+   pub context:          FixtureContext,
 }
 
 /// Golden (expected) output
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Golden {
    /// Expected analysis result
-   pub analysis: ConventionalAnalysis,
+   pub analysis:      ConventionalAnalysis,
    /// Expected final commit message
    pub final_message: String,
 }
@@ -115,11 +113,11 @@ pub struct Golden {
 #[derive(Debug, Clone)]
 pub struct Fixture {
    /// Fixture name (directory name)
-   pub name: String,
+   pub name:   String,
    /// Fixture metadata
-   pub meta: FixtureMeta,
+   pub meta:   FixtureMeta,
    /// Input data
-   pub input: FixtureInput,
+   pub input:  FixtureInput,
    /// Golden output (None if not yet generated)
    pub golden: Option<Golden>,
 }
@@ -144,9 +142,7 @@ impl Fixture {
             CommitGenError::Other(format!("Failed to parse {}: {e}", meta_path.display()))
          })?
       } else {
-         return Err(CommitGenError::Other(format!(
-            "Fixture '{name}' missing meta.toml"
-         )));
+         return Err(CommitGenError::Other(format!("Fixture '{name}' missing meta.toml")));
       };
 
       // Load input files
@@ -162,9 +158,8 @@ impl Fixture {
       let context_path = input_dir.join("context.toml");
       let context: FixtureContext = if context_path.exists() {
          let content = fs::read_to_string(&context_path)?;
-         toml::from_str(&content).map_err(|e| {
-            CommitGenError::Other(format!("Failed to parse context.toml: {e}"))
-         })?
+         toml::from_str(&content)
+            .map_err(|e| CommitGenError::Other(format!("Failed to parse context.toml: {e}")))?
       } else {
          FixtureContext::default()
       };
@@ -178,9 +173,7 @@ impl Fixture {
          if analysis_path.exists() && final_path.exists() {
             let analysis_content = fs::read_to_string(&analysis_path)?;
             let analysis: ConventionalAnalysis = serde_json::from_str(&analysis_content)
-               .map_err(|e| {
-                  CommitGenError::Other(format!("Failed to parse analysis.json: {e}"))
-               })?;
+               .map_err(|e| CommitGenError::Other(format!("Failed to parse analysis.json: {e}")))?;
             let final_message = fs::read_to_string(&final_path)?;
             Some(Golden { analysis, final_message })
          } else {
@@ -209,9 +202,8 @@ impl Fixture {
       fs::create_dir_all(&golden_dir)?;
 
       // Save metadata
-      let meta_content = toml::to_string_pretty(&self.meta).map_err(|e| {
-         CommitGenError::Other(format!("Failed to serialize meta: {e}"))
-      })?;
+      let meta_content = toml::to_string_pretty(&self.meta)
+         .map_err(|e| CommitGenError::Other(format!("Failed to serialize meta: {e}")))?;
       fs::write(fixture_dir.join("meta.toml"), meta_content)?;
 
       // Save input files
@@ -219,9 +211,8 @@ impl Fixture {
       fs::write(input_dir.join("stat.txt"), &self.input.stat)?;
       fs::write(input_dir.join("scope_candidates.txt"), &self.input.scope_candidates)?;
 
-      let context_content = toml::to_string_pretty(&self.input.context).map_err(|e| {
-         CommitGenError::Other(format!("Failed to serialize context: {e}"))
-      })?;
+      let context_content = toml::to_string_pretty(&self.input.context)
+         .map_err(|e| CommitGenError::Other(format!("Failed to serialize context: {e}")))?;
       fs::write(input_dir.join("context.toml"), context_content)?;
 
       // Save golden output if present
@@ -259,9 +250,10 @@ pub fn discover_fixtures(fixtures_dir: &Path) -> Result<Vec<String>> {
 
       // Check if it has meta.toml (valid fixture)
       if path.join("meta.toml").exists()
-         && let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-            fixtures.push(name.to_string());
-         }
+         && let Some(name) = path.file_name().and_then(|n| n.to_str())
+      {
+         fixtures.push(name.to_string());
+      }
    }
 
    fixtures.sort();

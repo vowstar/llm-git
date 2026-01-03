@@ -14,7 +14,7 @@ use error::{CommitGenError, Result};
 use git::{
    get_common_scopes, get_git_diff, get_git_stat, get_recent_commits, git_commit, git_push,
 };
-use llm_git::{*, style, tokens::create_token_counter};
+use llm_git::{style, tokens::create_token_counter, *};
 use normalization::{format_commit_message, post_process_commit_message};
 use types::{Args, ConventionalCommit, Mode, resolve_model_name};
 use validation::{check_type_scope_consistency, validate_commit_message};
@@ -56,19 +56,13 @@ fn run_test_mode(args: &Args, config: &CommitConfig) -> Result<()> {
          CommitGenError::Other("--test-name is required when using --test-add".to_string())
       })?;
 
-      return add_fixture(
-         &fixtures_dir,
-         commit_hash,
-         name,
-         &args.dir,
-         config,
-      );
+      return add_fixture(&fixtures_dir, commit_hash, name, &args.dir, config);
    }
 
    // Handle --test-update
    if args.test_update {
-      let runner = TestRunner::new(&fixtures_dir, config.clone())
-         .with_filter(args.test_filter.clone());
+      let runner =
+         TestRunner::new(&fixtures_dir, config.clone()).with_filter(args.test_filter.clone());
 
       println!("Updating golden files...");
       let updated = runner.update_all()?;
@@ -80,8 +74,8 @@ fn run_test_mode(args: &Args, config: &CommitConfig) -> Result<()> {
    }
 
    // Default: run tests
-   let runner = TestRunner::new(&fixtures_dir, config.clone())
-      .with_filter(args.test_filter.clone());
+   let runner =
+      TestRunner::new(&fixtures_dir, config.clone()).with_filter(args.test_filter.clone());
 
    println!("Running fixture tests from {}...\n", fixtures_dir.display());
 
@@ -97,11 +91,7 @@ fn run_test_mode(args: &Args, config: &CommitConfig) -> Result<()> {
       if let Some(err) = &result.error {
          println!("✗ {} - ERROR: {}", result.name, err);
       } else if let Some(cmp) = &result.comparison {
-         println!("{} {} - {}",
-            if cmp.passed { "✓" } else { "✗" },
-            result.name,
-            cmp.summary
-         );
+         println!("{} {} - {}", if cmp.passed { "✓" } else { "✗" }, result.name, cmp.summary);
       } else {
          println!("? {} - no golden file", result.name);
       }
@@ -122,9 +112,10 @@ fn run_test_mode(args: &Args, config: &CommitConfig) -> Result<()> {
       let mut fixtures = Vec::new();
       for name in &fixture_names {
          if let Some(pattern) = &args.test_filter
-            && !name.contains(pattern) {
-               continue;
-            }
+            && !name.contains(pattern)
+         {
+            continue;
+         }
          if let Ok(f) = testing::Fixture::load(&fixtures_dir, name) {
             fixtures.push(f);
          }
@@ -149,7 +140,9 @@ fn add_fixture(
    repo_dir: &str,
    config: &CommitConfig,
 ) -> Result<()> {
-   use llm_git::testing::{Fixture, FixtureContext, FixtureEntry, FixtureInput, FixtureMeta, Manifest};
+   use llm_git::testing::{
+      Fixture, FixtureContext, FixtureEntry, FixtureInput, FixtureMeta, Manifest,
+   };
 
    println!("Creating fixture '{name}' from commit {commit_hash}...");
 
@@ -158,12 +151,8 @@ fn add_fixture(
    let stat = git::get_git_stat(&Mode::Commit, Some(commit_hash), repo_dir, config)?;
 
    // Get scope candidates
-   let (scope_candidates, _) = analysis::extract_scope_candidates(
-      &Mode::Commit,
-      Some(commit_hash),
-      repo_dir,
-      config,
-   )?;
+   let (scope_candidates, _) =
+      analysis::extract_scope_candidates(&Mode::Commit, Some(commit_hash), repo_dir, config)?;
 
    // Get context from current repo state
    let (recent_commits_str, common_scopes_str) = match git::get_recent_commits(repo_dir, 20) {
@@ -193,15 +182,15 @@ fn add_fixture(
 
    // Build fixture
    let fixture = Fixture {
-      name: name.to_string(),
-      meta: FixtureMeta {
+      name:   name.to_string(),
+      meta:   FixtureMeta {
          source_repo:   repo_dir.to_string(),
          source_commit: commit_hash.to_string(),
          description:   format!("Fixture from commit {commit_hash}"),
          captured_at:   chrono::Utc::now().to_rfc3339(),
          tags:          vec![],
       },
-      input: FixtureInput {
+      input:  FixtureInput {
          diff,
          stat,
          scope_candidates,
@@ -221,13 +210,10 @@ fn add_fixture(
 
    // Update manifest
    let mut manifest = Manifest::load(fixtures_dir)?;
-   manifest.add(
-      name.to_string(),
-      FixtureEntry {
-         description: format!("From commit {commit_hash}"),
-         tags:        vec![],
-      },
-   );
+   manifest.add(name.to_string(), FixtureEntry {
+      description: format!("From commit {commit_hash}"),
+      tags:        vec![],
+   });
    manifest.save(fixtures_dir)?;
 
    println!("✓ Created fixture at {}/{}", fixtures_dir.display(), name);
@@ -330,14 +316,21 @@ fn run_generation(
 
    // Check if map-reduce should be used for large diffs
    // Map-reduce handles its own per-file processing, so we pass the original diff
-   // Only apply smart truncation if map-reduce is disabled or diff is below threshold
+   // Only apply smart truncation if map-reduce is disabled or diff is below
+   // threshold
    let use_map_reduce = llm_git::map_reduce::should_use_map_reduce(&diff, config, token_counter);
 
    let diff = if use_map_reduce {
       // Map-reduce will handle the full diff with per-file analysis
       diff
    } else if diff.len() > config.max_diff_length {
-      println!("{}", style::warning(&format!("Applying smart truncation (diff size: {} characters)", diff.len())));
+      println!(
+         "{}",
+         style::warning(&format!(
+            "Applying smart truncation (diff size: {} characters)",
+            diff.len()
+         ))
+      );
       smart_truncate_diff(&diff, config.max_diff_length, config, token_counter)
    } else {
       diff
@@ -420,7 +413,8 @@ fn run_generation(
          context.as_deref(),
          config,
       )
-   }).unwrap_or_else(|err| {
+   })
+   .unwrap_or_else(|err| {
       eprintln!("{}", style::warning(&format!("Failed to create summary with Haiku: {err}")));
       fallback_summary(&stat, &detail_points, analysis.commit_type.as_str(), config)
    });
@@ -625,11 +619,13 @@ fn main() -> Result<()> {
    }
 
    // Run changelog maintenance if not disabled (check both CLI flag and config)
-   if !args.no_changelog && config.changelog_enabled
-      && let Err(e) = llm_git::changelog::run_changelog_flow(&args, &config) {
-         // Don't fail the commit, just warn
-         eprintln!("Warning: Changelog update failed: {e}");
-      }
+   if !args.no_changelog
+      && config.changelog_enabled
+      && let Err(e) = llm_git::changelog::run_changelog_flow(&args, &config)
+   {
+      // Don't fail the commit, just warn
+      eprintln!("Warning: Changelog update failed: {e}");
+   }
 
    println!("{} Analyzing {} changes...", style::info("›"), match args.mode {
       Mode::Staged => style::bold("staged"),
@@ -672,7 +668,10 @@ fn main() -> Result<()> {
       save_debug_output(debug_dir, "commit.json", &commit_json)?;
    }
 
-   println!("\n{}", style::boxed_message("Generated Commit Message", &formatted_message, style::term_width()));
+   println!(
+      "\n{}",
+      style::boxed_message("Generated Commit Message", &formatted_message, style::term_width())
+   );
 
    if std::env::var("LLM_GIT_VERBOSE").is_ok() {
       println!("\nJSON Structure:");
@@ -693,7 +692,10 @@ fn main() -> Result<()> {
       if validation_failed.is_some() {
          eprintln!(
             "\n{}",
-            style::warning("Skipping commit due to validation failure. Use --dry-run to test or manually commit.")
+            style::warning(
+               "Skipping commit due to validation failure. Use --dry-run to test or manually \
+                commit."
+            )
          );
          return Err(CommitGenError::ValidationError(
             "Commit message validation failed".to_string(),

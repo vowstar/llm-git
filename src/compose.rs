@@ -640,7 +640,13 @@ fn validate_compose_groups(groups: &[ChangeGroup], full_diff: &str) -> Result<()
    // Check for missing files
    let missing_files: Vec<&String> = diff_files.difference(&covered_files).collect();
    if !missing_files.is_empty() {
-      eprintln!("{}", style::warning(&format!("{} Warning: Groups don't cover all files. Missing:", style::icons::WARNING)));
+      eprintln!(
+         "{}",
+         style::warning(&format!(
+            "{} Warning: Groups don't cover all files. Missing:",
+            style::icons::WARNING
+         ))
+      );
       for file in &missing_files {
          eprintln!("   - {file}");
       }
@@ -657,7 +663,13 @@ fn validate_compose_groups(groups: &[ChangeGroup], full_diff: &str) -> Result<()
       .collect();
 
    if !duplicates.is_empty() {
-      eprintln!("{}", style::warning(&format!("{} Warning: Some files appear in multiple groups:", style::icons::WARNING)));
+      eprintln!(
+         "{}",
+         style::warning(&format!(
+            "{} Warning: Some files appear in multiple groups:",
+            style::icons::WARNING
+         ))
+      );
       for (file, count) in duplicates {
          eprintln!("   - {file} ({count} times)");
       }
@@ -777,7 +789,10 @@ pub fn execute_compose(
       post_process_commit_message(&mut commit, config);
 
       if let Err(e) = validate_commit_message(&commit, config) {
-         eprintln!("  {}", style::warning(&format!("{} Warning: Validation failed: {e}", style::icons::WARNING)));
+         eprintln!(
+            "  {}",
+            style::warning(&format!("{} Warning: Validation failed: {e}", style::icons::WARNING))
+         );
       }
 
       let formatted_message = format_commit_message(&commit);
@@ -827,7 +842,10 @@ pub fn run_compose_mode(args: &Args, config: &CommitConfig) -> Result<()> {
 
    for round in 1..=max_rounds {
       if round > 1 {
-         println!("\n{}", style::section_header(&format!("Compose Round {round}/{max_rounds}"), 80));
+         println!(
+            "\n{}",
+            style::section_header(&format!("Compose Round {round}/{max_rounds}"), 80)
+         );
       } else {
          println!("{}", style::section_header("Compose Mode", 80));
       }
@@ -852,11 +870,23 @@ pub fn run_compose_mode(args: &Args, config: &CommitConfig) -> Result<()> {
 
       let remaining_diff = String::from_utf8_lossy(&remaining_diff_output.stdout);
       if remaining_diff.trim().is_empty() {
-         println!("\n{}", style::success(&format!("{} All changes committed successfully", style::icons::SUCCESS)));
+         println!(
+            "\n{}",
+            style::success(&format!(
+               "{} All changes committed successfully",
+               style::icons::SUCCESS
+            ))
+         );
          break;
       }
 
-      eprintln!("\n{}", style::warning(&format!("{} Uncommitted changes remain after round {round}", style::icons::WARNING)));
+      eprintln!(
+         "\n{}",
+         style::warning(&format!(
+            "{} Uncommitted changes remain after round {round}",
+            style::icons::WARNING
+         ))
+      );
 
       let stat_output = std::process::Command::new("git")
          .args(["diff", "HEAD", "--stat"])
@@ -875,7 +905,12 @@ pub fn run_compose_mode(args: &Args, config: &CommitConfig) -> Result<()> {
          eprintln!("{}", style::info("Starting another compose round..."));
          continue;
       }
-      eprintln!("{}", style::warning(&format!("Reached max rounds ({max_rounds}). Remaining changes need manual commit.")));
+      eprintln!(
+         "{}",
+         style::warning(&format!(
+            "Reached max rounds ({max_rounds}). Remaining changes need manual commit."
+         ))
+      );
    }
 
    Ok(())
@@ -991,13 +1026,26 @@ fn run_compose_round(args: &Args, config: &CommitConfig, round: usize) -> Result
    }
 
    if args.compose_preview {
-      println!("\n{}", style::success(&format!("{} Preview complete (use --compose without --compose-preview to execute)", style::icons::SUCCESS)));
+      println!(
+         "\n{}",
+         style::success(&format!(
+            "{} Preview complete (use --compose without --compose-preview to execute)",
+            style::icons::SUCCESS
+         ))
+      );
       return Ok(());
    }
 
    println!("\n{}", style::info(&format!("Executing compose (round {round})...")));
    let hashes = execute_compose(&analysis, config, args)?;
 
-   println!("{}", style::success(&format!("{} Round {round}: Created {} commit(s)", style::icons::SUCCESS, hashes.len())));
+   println!(
+      "{}",
+      style::success(&format!(
+         "{} Round {round}: Created {} commit(s)",
+         style::icons::SUCCESS,
+         hashes.len()
+      ))
+   );
    Ok(())
 }

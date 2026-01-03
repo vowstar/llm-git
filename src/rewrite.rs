@@ -98,7 +98,11 @@ pub fn run_rewrite_mode(args: &Args, config: &CommitConfig) -> Result<()> {
    println!("\n{} Rewriting history...", style::warning("⚠️"));
    rewrite_history(&commits, &new_messages, &args.dir)?;
 
-   println!("\n{} Done! Rewrote {} commits", style::success("✅"), style::bold(&commits.len().to_string()));
+   println!(
+      "\n{} Done! Rewrote {} commits",
+      style::success("✅"),
+      style::bold(&commits.len().to_string())
+   );
    println!("Restore with: {}", style::dim(&format!("git reset --hard {backup}")));
 
    Ok(())
@@ -128,7 +132,11 @@ fn generate_messages_parallel(
                   let new = new_msg.lines().next().unwrap_or("");
 
                   println!("[{:3}/{:3}] {}", idx + 1, commits.len(), style::dim(&commit.hash[..8]));
-                  println!("  {} {}", style::error("-"), style::dim(&TruncStr(old, 60).to_string()));
+                  println!(
+                     "  {} {}",
+                     style::error("-"),
+                     style::dim(&TruncStr(old, 60).to_string())
+                  );
                   println!("  {} {}", style::success("+"), TruncStr(new, 60));
                   println!();
                },
@@ -261,7 +269,11 @@ fn print_preview_list(commits: &[CommitMetadata]) {
 
 /// Print conversion results comparison
 fn print_conversion_results(commits: &[CommitMetadata], new_messages: &[String]) {
-   println!("\n{} Processed {} commits\n", style::success("✓"), style::bold(&commits.len().to_string()));
+   println!(
+      "\n{} Processed {} commits\n",
+      style::success("✓"),
+      style::bold(&commits.len().to_string())
+   );
 
    // Show first 3 examples
    let show_count = 3.min(commits.len());

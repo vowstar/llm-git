@@ -37,22 +37,20 @@ pub struct TypeConfig {
 pub struct CategoryMatch {
    /// Match if commit type is one of these
    #[serde(default)]
-   pub types: Vec<String>,
+   pub types:         Vec<String>,
    /// Match if body contains any of these strings (case-insensitive)
    #[serde(default)]
    pub body_contains: Vec<String>,
 }
 
-
-
 /// Configuration for a changelog category
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CategoryConfig {
    /// Category name (e.g., "Added", "Fixed")
-   pub name: String,
+   pub name:    String,
    /// Display header in changelog (defaults to name if not set)
    #[serde(default)]
-   pub header: Option<String>,
+   pub header:  Option<String>,
    /// Match rules for this category
    #[serde(default)]
    pub r#match: CategoryMatch,
@@ -72,141 +70,104 @@ impl CategoryConfig {
 /// Order defines priority: first type checked first in decision tree
 pub fn default_types() -> IndexMap<String, TypeConfig> {
    IndexMap::from([
-      (
-         "feat".to_string(),
-         TypeConfig {
-            description:     "New public API surface OR user-observable capability/behavior change"
-               .to_string(),
-            diff_indicators: vec![
-               "pub fn".to_string(),
-               "pub struct".to_string(),
-               "pub enum".to_string(),
-               "export function".to_string(),
-               "#[arg]".to_string(),
-            ],
-            file_patterns:   vec![],
-            examples:        vec![
-               "Added pub fn process_batch() → feat (new API)".to_string(),
-               "Migrated HTTP client to async → feat (behavior change)".to_string(),
-            ],
-            ..Default::default()
-         },
-      ),
-      (
-         "fix".to_string(),
-         TypeConfig {
-            description:     "Fixes incorrect behavior (bugs, crashes, wrong outputs, race \
-                              conditions)"
-               .to_string(),
-            diff_indicators: vec![
-               "unwrap() → ?".to_string(),
-               "bounds check".to_string(),
-               "off-by-one".to_string(),
-               "error handling".to_string(),
-            ],
-            ..Default::default()
-         },
-      ),
-      (
-         "refactor".to_string(),
-         TypeConfig {
-            description:     "Internal restructuring with provably unchanged behavior".to_string(),
-            diff_indicators: vec![
-               "rename".to_string(),
-               "extract".to_string(),
-               "consolidate".to_string(),
-               "reorganize".to_string(),
-            ],
-            examples:        vec![
-               "Renamed internal module structure → refactor (no API change)".to_string(),
-            ],
-            hint:            "Requires proof: same tests pass, same API. If behavior changes, use \
-                              feat."
-               .to_string(),
-            ..Default::default()
-         },
-      ),
-      (
-         "docs".to_string(),
-         TypeConfig {
-            description:     "Documentation only changes".to_string(),
-            file_patterns:   vec!["*.md".to_string(), "doc comments".to_string()],
-            ..Default::default()
-         },
-      ),
-      (
-         "test".to_string(),
-         TypeConfig {
-            description:     "Adding or modifying tests".to_string(),
-            file_patterns:   vec![
-               "*_test.rs".to_string(),
-               "tests/".to_string(),
-               "*.test.ts".to_string(),
-            ],
-            ..Default::default()
-         },
-      ),
-      (
-         "chore".to_string(),
-         TypeConfig {
-            description:     "Maintenance tasks, dependencies, tooling".to_string(),
-            file_patterns:   vec![
-               ".gitignore".to_string(),
-               "*.lock".to_string(),
-               "config files".to_string(),
-            ],
-            ..Default::default()
-         },
-      ),
-      (
-         "style".to_string(),
-         TypeConfig {
-            description:     "Formatting, whitespace changes (no logic change)".to_string(),
-            diff_indicators: vec!["whitespace".to_string(), "formatting".to_string()],
-            hint:            "Variable/function renames are refactor, not style.".to_string(),
-            ..Default::default()
-         },
-      ),
-      (
-         "perf".to_string(),
-         TypeConfig {
-            description:     "Performance improvements (proven faster)".to_string(),
-            diff_indicators: vec![
-               "optimization".to_string(),
-               "cache".to_string(),
-               "batch".to_string(),
-            ],
-            ..Default::default()
-         },
-      ),
-      (
-         "build".to_string(),
-         TypeConfig {
-            description:     "Build system, dependency changes".to_string(),
-            file_patterns:   vec![
-               "Cargo.toml".to_string(),
-               "package.json".to_string(),
-               "Makefile".to_string(),
-            ],
-            ..Default::default()
-         },
-      ),
-      (
-         "ci".to_string(),
-         TypeConfig {
-            description:     "CI/CD configuration".to_string(),
-            file_patterns:   vec![".github/workflows/".to_string(), ".gitlab-ci.yml".to_string()],
-            ..Default::default()
-         },
-      ),
-      (
-         "revert".to_string(),
-         TypeConfig {
-            description:     "Reverts a previous commit".to_string(),
-            diff_indicators: vec!["Revert".to_string()],
-            ..Default::default()
-         },
-      ),
+      ("feat".to_string(), TypeConfig {
+         description: "New public API surface OR user-observable capability/behavior change"
+            .to_string(),
+         diff_indicators: vec![
+            "pub fn".to_string(),
+            "pub struct".to_string(),
+            "pub enum".to_string(),
+            "export function".to_string(),
+            "#[arg]".to_string(),
+         ],
+         file_patterns: vec![],
+         examples: vec![
+            "Added pub fn process_batch() → feat (new API)".to_string(),
+            "Migrated HTTP client to async → feat (behavior change)".to_string(),
+         ],
+         ..Default::default()
+      }),
+      ("fix".to_string(), TypeConfig {
+         description: "Fixes incorrect behavior (bugs, crashes, wrong outputs, race conditions)"
+            .to_string(),
+         diff_indicators: vec![
+            "unwrap() → ?".to_string(),
+            "bounds check".to_string(),
+            "off-by-one".to_string(),
+            "error handling".to_string(),
+         ],
+         ..Default::default()
+      }),
+      ("refactor".to_string(), TypeConfig {
+         description: "Internal restructuring with provably unchanged behavior".to_string(),
+         diff_indicators: vec![
+            "rename".to_string(),
+            "extract".to_string(),
+            "consolidate".to_string(),
+            "reorganize".to_string(),
+         ],
+         examples: vec!["Renamed internal module structure → refactor (no API change)".to_string()],
+         hint: "Requires proof: same tests pass, same API. If behavior changes, use feat."
+            .to_string(),
+         ..Default::default()
+      }),
+      ("docs".to_string(), TypeConfig {
+         description: "Documentation only changes".to_string(),
+         file_patterns: vec!["*.md".to_string(), "doc comments".to_string()],
+         ..Default::default()
+      }),
+      ("test".to_string(), TypeConfig {
+         description: "Adding or modifying tests".to_string(),
+         file_patterns: vec![
+            "*_test.rs".to_string(),
+            "tests/".to_string(),
+            "*.test.ts".to_string(),
+         ],
+         ..Default::default()
+      }),
+      ("chore".to_string(), TypeConfig {
+         description: "Maintenance tasks, dependencies, tooling".to_string(),
+         file_patterns: vec![
+            ".gitignore".to_string(),
+            "*.lock".to_string(),
+            "config files".to_string(),
+         ],
+         ..Default::default()
+      }),
+      ("style".to_string(), TypeConfig {
+         description: "Formatting, whitespace changes (no logic change)".to_string(),
+         diff_indicators: vec!["whitespace".to_string(), "formatting".to_string()],
+         hint: "Variable/function renames are refactor, not style.".to_string(),
+         ..Default::default()
+      }),
+      ("perf".to_string(), TypeConfig {
+         description: "Performance improvements (proven faster)".to_string(),
+         diff_indicators: vec![
+            "optimization".to_string(),
+            "cache".to_string(),
+            "batch".to_string(),
+         ],
+         ..Default::default()
+      }),
+      ("build".to_string(), TypeConfig {
+         description: "Build system, dependency changes".to_string(),
+         file_patterns: vec![
+            "Cargo.toml".to_string(),
+            "package.json".to_string(),
+            "Makefile".to_string(),
+         ],
+         ..Default::default()
+      }),
+      ("ci".to_string(), TypeConfig {
+         description: "CI/CD configuration".to_string(),
+         file_patterns: vec![".github/workflows/".to_string(), ".gitlab-ci.yml".to_string()],
+         ..Default::default()
+      }),
+      ("revert".to_string(), TypeConfig {
+         description: "Reverts a previous commit".to_string(),
+         diff_indicators: vec!["Revert".to_string()],
+         ..Default::default()
+      }),
    ])
 }
 
@@ -235,10 +196,7 @@ pub fn default_categories() -> Vec<CategoryConfig> {
       CategoryConfig {
          name:    "Added".to_string(),
          header:  None,
-         r#match: CategoryMatch {
-            types:         vec!["feat".to_string()],
-            body_contains: vec![],
-         },
+         r#match: CategoryMatch { types: vec!["feat".to_string()], body_contains: vec![] },
          default: false,
       },
       CategoryConfig {
@@ -265,10 +223,7 @@ pub fn default_categories() -> Vec<CategoryConfig> {
       CategoryConfig {
          name:    "Fixed".to_string(),
          header:  None,
-         r#match: CategoryMatch {
-            types:         vec!["fix".to_string()],
-            body_contains: vec![],
-         },
+         r#match: CategoryMatch { types: vec!["fix".to_string()], body_contains: vec![] },
          default: false,
       },
       CategoryConfig {
@@ -324,7 +279,8 @@ impl ChangelogCategory {
       }
    }
 
-   /// Map commit type to changelog category (legacy method, prefer config-based `resolve_category`)
+   /// Map commit type to changelog category (legacy method, prefer config-based
+   /// `resolve_category`)
    pub fn from_commit_type(commit_type: &str, body: &[String]) -> Self {
       // Check body for breaking change indicators
       let has_breaking = body.iter().any(|s| {
@@ -365,11 +321,11 @@ pub struct ChangelogBoundary {
    /// Path to the CHANGELOG.md file
    pub changelog_path: PathBuf,
    /// Files within this changelog's boundary
-   pub files: Vec<String>,
+   pub files:          Vec<String>,
    /// Git diff for these files only
-   pub diff: String,
+   pub diff:           String,
    /// Git stat for these files only
-   pub stat: String,
+   pub stat:           String,
 }
 
 /// Parsed [Unreleased] section from a CHANGELOG.md
@@ -378,9 +334,9 @@ pub struct UnreleasedSection {
    /// Line number where [Unreleased] header starts (0-indexed)
    pub header_line: usize,
    /// Line number where next version or EOF occurs (0-indexed, exclusive)
-   pub end_line: usize,
+   pub end_line:    usize,
    /// Existing entries by category
-   pub entries: HashMap<ChangelogCategory, Vec<String>>,
+   pub entries:     HashMap<ChangelogCategory, Vec<String>>,
 }
 
 #[derive(Debug, Clone, ValueEnum)]
@@ -726,17 +682,18 @@ pub struct ConventionalCommit {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnalysisDetail {
    /// The detail text (past-tense sentence)
-   pub text: String,
+   pub text:               String,
    /// Changelog category if this detail is user-visible
    #[serde(default, skip_serializing_if = "Option::is_none")]
    pub changelog_category: Option<ChangelogCategory>,
    /// Whether this detail should appear in the changelog
    #[serde(default)]
-   pub user_visible: bool,
+   pub user_visible:       bool,
 }
 
 impl AnalysisDetail {
-   /// Create a simple detail without changelog metadata (backward compatibility)
+   /// Create a simple detail without changelog metadata (backward
+   /// compatibility)
    pub fn simple(text: impl Into<String>) -> Self {
       Self { text: text.into(), changelog_category: None, user_visible: false }
    }
@@ -768,7 +725,10 @@ impl ConventionalAnalysis {
          if detail.user_visible
             && let Some(category) = detail.changelog_category
          {
-            entries.entry(category).or_insert_with(Vec::new).push(detail.text.clone());
+            entries
+               .entry(category)
+               .or_insert_with(Vec::new)
+               .push(detail.text.clone());
          }
       }
       entries
@@ -1008,7 +968,8 @@ pub struct Args {
    #[arg(long, short = 'S')]
    pub sign: bool,
 
-   /// Skip pre-commit and commit-msg hooks (equivalent to git commit --no-verify)
+   /// Skip pre-commit and commit-msg hooks (equivalent to git commit
+   /// --no-verify)
    #[arg(long, short = 'n')]
    pub skip_hooks: bool,
 
@@ -1074,7 +1035,8 @@ pub struct Args {
    pub no_changelog: bool,
 
    // === Debug args ===
-   /// Save intermediate outputs (diff, analysis, summary, changelog) to directory
+   /// Save intermediate outputs (diff, analysis, summary, changelog) to
+   /// directory
    #[arg(long)]
    pub debug_output: Option<PathBuf>,
 
@@ -1189,8 +1151,10 @@ where
                      .get("changelog_category")
                      .and_then(Value::as_str)
                      .map(ChangelogCategory::from_name);
-                  let user_visible =
-                     obj.get("user_visible").and_then(Value::as_bool).unwrap_or(false);
+                  let user_visible = obj
+                     .get("user_visible")
+                     .and_then(Value::as_bool)
+                     .unwrap_or(false);
                   AnalysisDetail { text, changelog_category, user_visible }
                },
                // Old format: plain string

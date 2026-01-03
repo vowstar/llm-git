@@ -5,7 +5,9 @@ use serde::Deserialize;
 
 use crate::{
    error::{CommitGenError, Result},
-   types::{CategoryConfig, TypeConfig, default_categories, default_classifier_hint, default_types},
+   types::{
+      CategoryConfig, TypeConfig, default_categories, default_classifier_hint, default_types,
+   },
 };
 
 #[derive(Debug, Clone, Deserialize)]

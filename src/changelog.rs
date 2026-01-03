@@ -99,7 +99,8 @@ pub fn run_changelog_flow(args: &crate::types::Args, config: &CommitConfig) -> R
          }
       })?;
 
-      let unreleased = match parse_unreleased_section(&changelog_content, &boundary.changelog_path) {
+      let unreleased = match parse_unreleased_section(&changelog_content, &boundary.changelog_path)
+      {
          Ok(u) => u,
          Err(CommitGenError::NoUnreleasedSection { path }) => {
             eprintln!(
@@ -132,7 +133,10 @@ pub fn run_changelog_flow(args: &crate::types::Args, config: &CommitConfig) -> R
       ) {
          Ok(entries) => entries,
          Err(e) => {
-            eprintln!("{}", crate::style::warning(&format!("Failed to generate changelog entries: {e}")));
+            eprintln!(
+               "{}",
+               crate::style::warning(&format!("Failed to generate changelog entries: {e}"))
+            );
             continue;
          },
       };
@@ -255,16 +259,26 @@ fn call_changelog_api(prompt: &str, config: &CommitConfig) -> Result<ChangelogRe
       if status.is_server_error() {
          if attempt < config.max_retries {
             let backoff_ms = config.initial_backoff_ms * (1 << (attempt - 1));
-            eprintln!("{}", crate::style::warning(&format!("Server error {status}, retry {attempt}/{} after {backoff_ms}ms...", config.max_retries)));
+            eprintln!(
+               "{}",
+               crate::style::warning(&format!(
+                  "Server error {status}, retry {attempt}/{} after {backoff_ms}ms...",
+                  config.max_retries
+               ))
+            );
             thread::sleep(Duration::from_millis(backoff_ms));
             continue;
          }
-         let error_text = response.text().unwrap_or_else(|_| "Unknown error".to_string());
+         let error_text = response
+            .text()
+            .unwrap_or_else(|_| "Unknown error".to_string());
          return Err(CommitGenError::ApiError { status: status.as_u16(), body: error_text });
       }
 
       if !status.is_success() {
-         let error_text = response.text().unwrap_or_else(|_| "Unknown error".to_string());
+         let error_text = response
+            .text()
+            .unwrap_or_else(|_| "Unknown error".to_string());
          return Err(CommitGenError::ApiError { status: status.as_u16(), body: error_text });
       }
 
@@ -314,9 +328,10 @@ fn extract_json_from_content(content: &str) -> String {
 
    // Try to find raw JSON object
    if let Some(start) = trimmed.find('{')
-      && let Some(end) = trimmed.rfind('}') {
-         return trimmed[start..=end].to_string();
-      }
+      && let Some(end) = trimmed.rfind('}')
+   {
+      return trimmed[start..=end].to_string();
+   }
 
    trimmed.to_string()
 }
@@ -424,7 +439,9 @@ fn detect_boundaries(
 
    for file in files {
       // Walk up from file's directory to find matching changelog
-      let mut current_path = Path::new(file).parent().map(|p| p.to_string_lossy().to_string());
+      let mut current_path = Path::new(file)
+         .parent()
+         .map(|p| p.to_string_lossy().to_string());
       let mut found = false;
 
       while let Some(ref dir_path) = current_path {
@@ -443,20 +460,16 @@ fn detect_boundaries(
       }
 
       // Fallback to root changelog
-      if !found
-         && let Some(ref root) = root_changelog {
-            file_to_changelog.insert(file.clone(), root.clone());
-         }
-         // If no root changelog, file is skipped
+      if !found && let Some(ref root) = root_changelog {
+         file_to_changelog.insert(file.clone(), root.clone());
+      }
+      // If no root changelog, file is skipped
    }
 
    // Group files by changelog
    let mut changelog_to_files: HashMap<PathBuf, Vec<String>> = HashMap::new();
    for (file, changelog) in file_to_changelog {
-      changelog_to_files
-         .entry(changelog)
-         .or_default()
-         .push(file);
+      changelog_to_files.entry(changelog).or_default().push(file);
    }
 
    // Build boundaries
@@ -516,9 +529,7 @@ fn parse_unreleased_section(content: &str, path: &Path) -> Result<UnreleasedSect
          let trimmed = l.trim().to_lowercase();
          trimmed.contains("[unreleased]") || trimmed == "## unreleased"
       })
-      .ok_or_else(|| CommitGenError::NoUnreleasedSection {
-         path: path.display().to_string(),
-      })?;
+      .ok_or_else(|| CommitGenError::NoUnreleasedSection { path: path.display().to_string() })?;
 
    // Find end of unreleased section (next version header or EOF)
    let end_line = lines
@@ -561,11 +572,7 @@ fn parse_unreleased_section(content: &str, path: &Path) -> Result<UnreleasedSect
       }
    }
 
-   Ok(UnreleasedSection {
-      header_line,
-      end_line,
-      entries,
-   })
+   Ok(UnreleasedSection { header_line, end_line, entries })
 }
 
 /// Write entries to changelog content
@@ -580,7 +587,11 @@ fn write_entries(
    let mut result = Vec::new();
 
    // Copy lines up to and including [Unreleased] header
-   result.extend(lines[..=unreleased.header_line].iter().map(|s| s.to_string()));
+   result.extend(
+      lines[..=unreleased.header_line]
+         .iter()
+         .map(|s| s.to_string()),
+   );
 
    // Add blank line after header if not present
    if unreleased.header_line + 1 < lines.len() && !lines[unreleased.header_line + 1].is_empty() {
@@ -690,24 +701,34 @@ That's all!"#;
       let section = parse_unreleased_section(content, Path::new("CHANGELOG.md")).unwrap();
       assert_eq!(section.header_line, 2);
       assert_eq!(section.end_line, 13); // Line 13 is "## [1.0.0] - 2024-01-01"
-      assert_eq!(section.entries.get(&ChangelogCategory::Added).unwrap().len(), 2);
-      assert_eq!(section.entries.get(&ChangelogCategory::Fixed).unwrap().len(), 1);
+      assert_eq!(
+         section
+            .entries
+            .get(&ChangelogCategory::Added)
+            .unwrap()
+            .len(),
+         2
+      );
+      assert_eq!(
+         section
+            .entries
+            .get(&ChangelogCategory::Fixed)
+            .unwrap()
+            .len(),
+         1
+      );
    }
 
    #[test]
    fn test_format_existing_entries() {
       let mut entries = HashMap::new();
-      entries.insert(
-         ChangelogCategory::Added,
-         vec!["- Feature one".to_string(), "- Feature two".to_string()],
-      );
+      entries.insert(ChangelogCategory::Added, vec![
+         "- Feature one".to_string(),
+         "- Feature two".to_string(),
+      ]);
       entries.insert(ChangelogCategory::Fixed, vec!["- Bug fix".to_string()]);
 
-      let unreleased = UnreleasedSection {
-         header_line: 0,
-         end_line: 10,
-         entries,
-      };
+      let unreleased = UnreleasedSection { header_line: 0, end_line: 10, entries };
 
       let formatted = format_existing_entries(&unreleased).unwrap();
       assert!(formatted.contains("### Added"));
@@ -718,11 +739,8 @@ That's all!"#;
 
    #[test]
    fn test_format_existing_entries_empty() {
-      let unreleased = UnreleasedSection {
-         header_line: 0,
-         end_line: 10,
-         entries: HashMap::new(),
-      };
+      let unreleased =
+         UnreleasedSection { header_line: 0, end_line: 10, entries: HashMap::new() };
 
       assert!(format_existing_entries(&unreleased).is_none());
    }

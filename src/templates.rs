@@ -12,14 +12,14 @@ use crate::error::{CommitGenError, Result};
 /// Parameters for rendering the analysis prompt template.
 #[derive(Default)]
 pub struct AnalysisParams<'a> {
-   pub variant: &'a str,
-   pub stat: &'a str,
-   pub diff: &'a str,
-   pub scope_candidates: &'a str,
-   pub recent_commits: Option<&'a str>,
-   pub common_scopes: Option<&'a str>,
+   pub variant:           &'a str,
+   pub stat:              &'a str,
+   pub diff:              &'a str,
+   pub scope_candidates:  &'a str,
+   pub recent_commits:    Option<&'a str>,
+   pub common_scopes:     Option<&'a str>,
    pub types_description: Option<&'a str>,
-   pub project_context: Option<&'a str>,
+   pub project_context:   Option<&'a str>,
 }
 
 /// Embedded prompts folder (compiled into binary)
@@ -57,8 +57,7 @@ static TERA: LazyLock<Mutex<Tera>> = LazyLock::new(|| {
       if let Err(e) = register_directory_templates(&mut tera, &prompts_dir.join("map"), "map") {
          eprintln!("Warning: {e}");
       }
-      if let Err(e) =
-         register_directory_templates(&mut tera, &prompts_dir.join("reduce"), "reduce")
+      if let Err(e) = register_directory_templates(&mut tera, &prompts_dir.join("reduce"), "reduce")
       {
          eprintln!("Warning: {e}");
       }

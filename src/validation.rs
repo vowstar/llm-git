@@ -12,60 +12,33 @@ const CODE_EXTENSIONS: &[&str] = &[
    // Systems programming
    "rs", "c", "cpp", "cc", "cxx", "h", "hpp", "hxx", "zig", "nim", "v",
    // JVM languages
-   "java", "kt", "kts", "scala", "groovy", "clj", "cljs",
-   // .NET languages
-   "cs", "fs", "vb",
-   // Web/scripting
-   "js", "ts", "jsx", "tsx", "mjs", "cjs", "vue", "svelte",
-   // Python ecosystem
-   "py", "pyx", "pxd", "pyi",
-   // Ruby
-   "rb", "rake", "gemspec",
-   // PHP
-   "php",
-   // Go
-   "go",
-   // Swift/Objective-C
-   "swift", "m", "mm",
-   // Lua
-   "lua",
-   // Shell
-   "sh", "bash", "zsh", "fish",
-   // Perl
-   "pl", "pm",
-   // Haskell/ML family
-   "hs", "lhs", "ml", "mli", "elm", "ex", "exs", "erl", "hrl",
-   // Lisp family
-   "lisp", "cl", "el", "scm", "rkt",
-   // Julia
-   "jl",
-   // R
-   "r",
-   // Dart/Flutter
-   "dart",
-   // Crystal
-   "cr",
-   // D
-   "d",
-   // Fortran
-   "f", "f90", "f95", "f03", "f08",
-   // Ada
-   "ada", "adb", "ads",
-   // Cobol
-   "cob", "cbl",
-   // Assembly
-   "asm", "s",
-   // SQL (stored procs)
-   "sql", "plsql",
-   // Prolog
-   "pro",
-   // OCaml/ReasonML
-   "re", "rei",
-   // Nix
-   "nix",
-   // Terraform/HCL
-   "tf", "hcl",
-   // Solidity/blockchain
+   "java", "kt", "kts", "scala", "groovy", "clj", "cljs", // .NET languages
+   "cs", "fs", "vb", // Web/scripting
+   "js", "ts", "jsx", "tsx", "mjs", "cjs", "vue", "svelte", // Python ecosystem
+   "py", "pyx", "pxd", "pyi", // Ruby
+   "rb", "rake", "gemspec", // PHP
+   "php",     // Go
+   "go",      // Swift/Objective-C
+   "swift", "m", "mm",  // Lua
+   "lua", // Shell
+   "sh", "bash", "zsh", "fish", // Perl
+   "pl", "pm", // Haskell/ML family
+   "hs", "lhs", "ml", "mli", "elm", "ex", "exs", "erl", "hrl", // Lisp family
+   "lisp", "cl", "el", "scm", "rkt",  // Julia
+   "jl",   // R
+   "r",    // Dart/Flutter
+   "dart", // Crystal
+   "cr",   // D
+   "d",    // Fortran
+   "f", "f90", "f95", "f03", "f08", // Ada
+   "ada", "adb", "ads", // Cobol
+   "cob", "cbl", // Assembly
+   "asm", "s", // SQL (stored procs)
+   "sql", "plsql", // Prolog
+   "pro",   // OCaml/ReasonML
+   "re", "rei", // Nix
+   "nix", // Terraform/HCL
+   "tf", "hcl", // Solidity/blockchain
    "sol", "move", "cairo",
 ];
 
@@ -420,7 +393,9 @@ pub fn check_type_scope_consistency(msg: &ConventionalCommit, stat: &str) {
       let has_code = stat.lines().any(|line| {
          let path = line.split('|').next().unwrap_or("").trim();
          let path_obj = std::path::Path::new(&path);
-         path_obj.extension().is_some_and(|ext| is_code_extension(ext.to_str().unwrap_or("")))
+         path_obj
+            .extension()
+            .is_some_and(|ext| is_code_extension(ext.to_str().unwrap_or("")))
       });
       if has_code {
          style::warn("Commit type 'style' but code files changed (verify no logic changes)");
@@ -461,8 +436,8 @@ pub fn check_type_scope_consistency(msg: &ConventionalCommit, stat: &str) {
          .any(|line| line.trim().starts_with("create mode") || line.contains("new file"));
       if has_new_files {
          style::warn(
-            "Commit type 'refactor' but new files were created - verify no new capabilities \
-             added (might be 'feat')"
+            "Commit type 'refactor' but new files were created - verify no new capabilities added \
+             (might be 'feat')",
          );
       }
    }
@@ -483,7 +458,7 @@ pub fn check_type_scope_consistency(msg: &ConventionalCommit, stat: &str) {
 
       if !has_perf_files && !has_perf_details {
          style::warn(
-            "Commit type 'perf' but no performance-related files or optimization keywords found"
+            "Commit type 'perf' but no performance-related files or optimization keywords found",
          );
       }
    }

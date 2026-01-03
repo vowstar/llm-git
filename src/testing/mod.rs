@@ -25,6 +25,8 @@ pub mod fixture;
 mod report;
 mod runner;
 
+use std::path::Path;
+
 pub use compare::{CompareResult, compare_analysis};
 pub use fixture::{
    Fixture, FixtureContext, FixtureEntry, FixtureInput, FixtureMeta, Golden, Manifest,
@@ -32,8 +34,6 @@ pub use fixture::{
 };
 pub use report::generate_html_report;
 pub use runner::{RunResult, TestRunner, TestSummary};
-
-use std::path::Path;
 
 use crate::error::Result;
 

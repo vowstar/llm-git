@@ -2,9 +2,8 @@
 
 use std::{fmt::Write, fs, path::Path};
 
-use crate::error::Result;
-
 use super::{CompareResult, Fixture, RunResult, TestSummary};
+use crate::error::Result;
 
 /// Generate an HTML report from test results
 pub fn generate_html_report(
@@ -299,7 +298,11 @@ fn render_comparison(cmp: &CompareResult, result: &RunResult, fixture: Option<&F
    html.push_str(r#"<div style="margin-bottom: 1.5rem;">"#);
 
    // Type
-   let type_class = if cmp.type_match { "diff-match" } else { "diff-mismatch" };
+   let type_class = if cmp.type_match {
+      "diff-match"
+   } else {
+      "diff-mismatch"
+   };
    if let Some(f) = fixture
       && let Some(golden) = &f.golden
    {
@@ -318,10 +321,18 @@ fn render_comparison(cmp: &CompareResult, result: &RunResult, fixture: Option<&F
    }
 
    // Scope
-   let scope_class = if cmp.scope_match { "diff-match" } else { "diff-mismatch" };
+   let scope_class = if cmp.scope_match {
+      "diff-match"
+   } else {
+      "diff-mismatch"
+   };
    let scope_value = match &cmp.scope_diff {
       Some(diff) => html_escape(diff),
-      None => result.analysis.scope.as_ref().map_or_else(|| "(none)".to_string(), |s| s.to_string()),
+      None => result
+         .analysis
+         .scope
+         .as_ref()
+         .map_or_else(|| "(none)".to_string(), |s| s.to_string()),
    };
    let _ = write!(
       html,
@@ -394,7 +405,11 @@ fn render_actual_only(result: &RunResult) -> String {
          <div class="message-box">{}</div>
       </div>"#,
       result.analysis.commit_type.as_str(),
-      result.analysis.scope.as_ref().map_or("(none)", |s| s.as_str()),
+      result
+         .analysis
+         .scope
+         .as_ref()
+         .map_or("(none)", |s| s.as_str()),
       result.analysis.details.len(),
       html_escape(&result.final_message)
    )

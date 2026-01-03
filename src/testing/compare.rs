@@ -6,23 +6,26 @@ use crate::types::ConventionalAnalysis;
 #[derive(Debug, Clone)]
 pub struct CompareResult {
    /// Whether the type matches
-   pub type_match: bool,
+   pub type_match:          bool,
    /// Whether the scope matches (or both are None)
-   pub scope_match: bool,
+   pub scope_match:         bool,
    /// Scope difference description if any
-   pub scope_diff: Option<String>,
+   pub scope_diff:          Option<String>,
    /// Number of details in golden
    pub golden_detail_count: usize,
    /// Number of details in actual
    pub actual_detail_count: usize,
    /// Overall pass/fail
-   pub passed: bool,
+   pub passed:              bool,
    /// Human-readable summary
-   pub summary: String,
+   pub summary:             String,
 }
 
 /// Compare actual analysis to golden
-pub fn compare_analysis(golden: &ConventionalAnalysis, actual: &ConventionalAnalysis) -> CompareResult {
+pub fn compare_analysis(
+   golden: &ConventionalAnalysis,
+   actual: &ConventionalAnalysis,
+) -> CompareResult {
    let type_match = golden.commit_type == actual.commit_type;
 
    let scope_match = golden.scope == actual.scope;

@@ -9,15 +9,15 @@ use std::path::Path;
 #[derive(Debug, Clone, Default)]
 pub struct RepoMetadata {
    /// Primary programming language
-   pub language: Option<String>,
+   pub language:        Option<String>,
    /// Web/backend framework if detected
-   pub framework: Option<String>,
+   pub framework:       Option<String>,
    /// Package manager used
    pub package_manager: Option<String>,
    /// Whether this is a monorepo/workspace
-   pub is_monorepo: bool,
+   pub is_monorepo:     bool,
    /// Number of packages/crates (for monorepos)
-   pub package_count: Option<usize>,
+   pub package_count:   Option<usize>,
 }
 
 impl RepoMetadata {
@@ -87,7 +87,7 @@ fn detect_rust(dir: &Path) -> Option<RepoMetadata> {
 
    let content = std::fs::read_to_string(&cargo_toml).ok()?;
    let mut meta = RepoMetadata {
-      language:        Some("Rust".to_string()),
+      language: Some("Rust".to_string()),
       package_manager: Some("cargo".to_string()),
       ..Default::default()
    };
@@ -98,13 +98,14 @@ fn detect_rust(dir: &Path) -> Option<RepoMetadata> {
 
       // Count workspace members
       if let Some(members_start) = content.find("members")
-         && let Some(bracket_start) = content[members_start..].find('[') {
-            let rest = &content[members_start + bracket_start..];
-            if let Some(bracket_end) = rest.find(']') {
-               let members_str = &rest[1..bracket_end];
-               meta.package_count = Some(members_str.matches('"').count() / 2);
-            }
+         && let Some(bracket_start) = content[members_start..].find('[')
+      {
+         let rest = &content[members_start + bracket_start..];
+         if let Some(bracket_end) = rest.find(']') {
+            let members_str = &rest[1..bracket_end];
+            meta.package_count = Some(members_str.matches('"').count() / 2);
          }
+      }
    }
 
    // Detect framework from dependencies
@@ -158,15 +159,15 @@ fn detect_node(dir: &Path) -> Option<RepoMetadata> {
    let content = std::fs::read_to_string(&package_json).ok()?;
 
    // Determine if TypeScript
-   let is_typescript =
-      content.contains("\"typescript\"") || dir.join("tsconfig.json").exists();
+   let is_typescript = content.contains("\"typescript\"") || dir.join("tsconfig.json").exists();
 
-   let language = if is_typescript { "TypeScript" } else { "JavaScript" };
-
-   let mut meta = RepoMetadata {
-      language: Some(language.to_string()),
-      ..Default::default()
+   let language = if is_typescript {
+      "TypeScript"
+   } else {
+      "JavaScript"
    };
+
+   let mut meta = RepoMetadata { language: Some(language.to_string()), ..Default::default() };
 
    // Detect package manager
    if dir.join("pnpm-lock.yaml").exists() {
@@ -232,10 +233,7 @@ fn detect_python(dir: &Path) -> Option<RepoMetadata> {
       return None;
    }
 
-   let mut meta = RepoMetadata {
-      language: Some("Python".to_string()),
-      ..Default::default()
-   };
+   let mut meta = RepoMetadata { language: Some("Python".to_string()), ..Default::default() };
 
    // Detect package manager
    if pyproject.exists() {

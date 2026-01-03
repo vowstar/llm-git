@@ -124,7 +124,13 @@ where
          },
          Ok((true, _)) if attempt < config.max_retries => {
             let backoff_ms = config.initial_backoff_ms * (1 << (attempt - 1));
-            eprintln!("{}", crate::style::warning(&format!("Retry {}/{} after {}ms...", attempt, config.max_retries, backoff_ms)));
+            eprintln!(
+               "{}",
+               crate::style::warning(&format!(
+                  "Retry {}/{} after {}ms...",
+                  attempt, config.max_retries, backoff_ms
+               ))
+            );
             thread::sleep(Duration::from_millis(backoff_ms));
          },
          Ok((true, _last_err)) => {
@@ -138,7 +144,10 @@ where
                let backoff_ms = config.initial_backoff_ms * (1 << (attempt - 1));
                eprintln!(
                   "{}",
-                  crate::style::warning(&format!("Error: {} - Retry {}/{} after {}ms...", e, attempt, config.max_retries, backoff_ms))
+                  crate::style::warning(&format!(
+                     "Error: {} - Retry {}/{} after {}ms...",
+                     e, attempt, config.max_retries, backoff_ms
+                  ))
                );
                thread::sleep(Duration::from_millis(backoff_ms));
                continue;
@@ -245,7 +254,11 @@ pub fn generate_conventional_analysis<'a>(
                      }
                   }
                }),
-               required:   vec!["type".to_string(), "details".to_string(), "issue_refs".to_string()],
+               required:   vec![
+                  "type".to_string(),
+                  "details".to_string(),
+                  "issue_refs".to_string(),
+               ],
             },
          },
       };
@@ -262,18 +275,16 @@ pub fn generate_conventional_analysis<'a>(
             role:    "user".to_string(),
             content: {
                let types_desc = format_types_description(config);
-               let mut prompt = templates::render_analysis_prompt(
-                  &templates::AnalysisParams {
-                     variant: &config.analysis_prompt_variant,
-                     stat,
-                     diff,
-                     scope_candidates: scope_candidates_str,
-                     recent_commits: ctx.recent_commits,
-                     common_scopes: ctx.common_scopes,
-                     types_description: Some(&types_desc),
-                     project_context: ctx.project_context,
-                  },
-               )?;
+               let mut prompt = templates::render_analysis_prompt(&templates::AnalysisParams {
+                  variant: &config.analysis_prompt_variant,
+                  stat,
+                  diff,
+                  scope_candidates: scope_candidates_str,
+                  recent_commits: ctx.recent_commits,
+                  common_scopes: ctx.common_scopes,
+                  types_description: Some(&types_desc),
+                  project_context: ctx.project_context,
+               })?;
 
                if let Some(user_ctx) = ctx.user_context {
                   prompt = format!("ADDITIONAL CONTEXT FROM USER:\n{user_ctx}\n\n{prompt}");
@@ -333,7 +344,8 @@ pub fn generate_conventional_analysis<'a>(
             let args = &tool_call.function.arguments;
             if args.is_empty() {
                crate::style::warn(
-                  "Model returned empty function arguments. Model may not support function calling properly.",
+                  "Model returned empty function arguments. Model may not support function \
+                   calling properly.",
                );
                return Err(CommitGenError::Other(
                   "Model returned empty function arguments - try using a Claude model \
@@ -365,8 +377,8 @@ pub fn generate_conventional_analysis<'a>(
 
 /// Strip conventional commit type prefix if LLM included it in summary.
 ///
-/// Some models return the full format `feat(scope): summary` instead of just `summary`.
-/// This function removes the prefix to normalize the response.
+/// Some models return the full format `feat(scope): summary` instead of just
+/// `summary`. This function removes the prefix to normalize the response.
 fn strip_type_prefix(summary: &str, commit_type: &str, scope: Option<&str>) -> String {
    let scope_part = scope.map(|s| format!("({s})")).unwrap_or_default();
    let prefix = format!("{commit_type}{scope_part}: ");
@@ -436,64 +448,36 @@ fn validate_summary_quality(
          // Systems programming
          "rs", "c", "cpp", "cc", "cxx", "h", "hpp", "hxx", "zig", "nim", "v",
          // JVM languages
-         "java", "kt", "kts", "scala", "groovy", "clj", "cljs",
-         // .NET languages
-         "cs", "fs", "vb",
-         // Web/scripting
-         "js", "ts", "jsx", "tsx", "mjs", "cjs", "vue", "svelte",
-         // Python ecosystem
-         "py", "pyx", "pxd", "pyi",
-         // Ruby
-         "rb", "rake", "gemspec",
-         // PHP
-         "php",
-         // Go
-         "go",
-         // Swift/Objective-C
-         "swift", "m", "mm",
-         // Lua
-         "lua",
-         // Shell
-         "sh", "bash", "zsh", "fish",
-         // Perl
-         "pl", "pm",
-         // Haskell/ML family
+         "java", "kt", "kts", "scala", "groovy", "clj", "cljs", // .NET languages
+         "cs", "fs", "vb", // Web/scripting
+         "js", "ts", "jsx", "tsx", "mjs", "cjs", "vue", "svelte", // Python ecosystem
+         "py", "pyx", "pxd", "pyi", // Ruby
+         "rb", "rake", "gemspec", // PHP
+         "php",     // Go
+         "go",      // Swift/Objective-C
+         "swift", "m", "mm",  // Lua
+         "lua", // Shell
+         "sh", "bash", "zsh", "fish", // Perl
+         "pl", "pm", // Haskell/ML family
          "hs", "lhs", "ml", "mli", "fs", "fsi", "elm", "ex", "exs", "erl", "hrl",
          // Lisp family
-         "lisp", "cl", "el", "scm", "rkt",
-         // Julia
-         "jl",
-         // R
-         "r", "R",
-         // Dart/Flutter
-         "dart",
-         // Crystal
-         "cr",
-         // D
-         "d",
-         // Fortran
-         "f", "f90", "f95", "f03", "f08",
-         // Ada
-         "ada", "adb", "ads",
-         // Cobol
-         "cob", "cbl",
-         // Assembly
-         "asm", "s", "S",
-         // SQL (stored procs)
-         "sql", "plsql",
-         // Prolog
-         "pl", "pro",
-         // OCaml/ReasonML
-         "re", "rei",
-         // Nix
-         "nix",
-         // Terraform/HCL
-         "tf", "hcl",
-         // Solidity
-         "sol",
-         // Move
-         "move",
-         // Cairo
+         "lisp", "cl", "el", "scm", "rkt", // Julia
+         "jl",  // R
+         "r", "R",    // Dart/Flutter
+         "dart", // Crystal
+         "cr",   // D
+         "d",    // Fortran
+         "f", "f90", "f95", "f03", "f08", // Ada
+         "ada", "adb", "ads", // Cobol
+         "cob", "cbl", // Assembly
+         "asm", "s", "S", // SQL (stored procs)
+         "sql", "plsql", // Prolog
+         "pl", "pro", // OCaml/ReasonML
+         "re", "rei", // Nix
+         "nix", // Terraform/HCL
+         "tf", "hcl",  // Solidity
+         "sol",  // Move
+         "move", // Cairo
          "cairo",
       ];
       let code_count = file_exts
@@ -640,7 +624,8 @@ pub fn generate_summary_from_analysis<'a>(
                let args = &tool_call.function.arguments;
                if args.is_empty() {
                   crate::style::warn(
-                     "Model returned empty function arguments for summary. Model may not support function calling.",
+                     "Model returned empty function arguments for summary. Model may not support \
+                      function calling.",
                   );
                   return Err(CommitGenError::Other(
                      "Model returned empty summary arguments - try using a Claude model \
@@ -655,12 +640,10 @@ pub fn generate_summary_from_analysis<'a>(
                      args.chars().take(200).collect::<String>()
                   ))
                })?;
-               // Strip type prefix if LLM included it (e.g., "feat(scope): summary" -> "summary")
+               // Strip type prefix if LLM included it (e.g., "feat(scope): summary" ->
+               // "summary")
                let cleaned = strip_type_prefix(&summary.summary, commit_type, scope);
-               return Ok((
-                  false,
-                  Some(CommitSummary::new(cleaned, config.summary_hard_limit)?),
-               ));
+               return Ok((false, Some(CommitSummary::new(cleaned, config.summary_hard_limit)?)));
             }
          }
 
@@ -669,10 +652,7 @@ pub fn generate_summary_from_analysis<'a>(
                serde_json::from_str(content.trim()).map_err(CommitGenError::JsonError)?;
             // Strip type prefix if LLM included it
             let cleaned = strip_type_prefix(&summary.summary, commit_type, scope);
-            return Ok((
-               false,
-               Some(CommitSummary::new(cleaned, config.summary_hard_limit)?),
-            ));
+            return Ok((false, Some(CommitSummary::new(cleaned, config.summary_hard_limit)?)));
          }
 
          Err(CommitGenError::Other("No summary found in summary creation response".to_string()))

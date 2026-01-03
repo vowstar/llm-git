@@ -1,5 +1,9 @@
 //! Test runner for fixture-based testing
 
+use super::{
+   compare::{CompareResult, compare_analysis},
+   fixture::{Fixture, discover_fixtures},
+};
 use crate::{
    api::{AnalysisContext, generate_analysis_with_map_reduce},
    config::CommitConfig,
@@ -9,24 +13,19 @@ use crate::{
    types::{CommitType, ConventionalAnalysis, ConventionalCommit},
 };
 
-use super::{
-   compare::{CompareResult, compare_analysis},
-   fixture::{Fixture, discover_fixtures},
-};
-
 /// Result of running a single fixture
 #[derive(Debug)]
 pub struct RunResult {
    /// Fixture name
-   pub name: String,
+   pub name:          String,
    /// Comparison result (None if no golden exists)
-   pub comparison: Option<CompareResult>,
+   pub comparison:    Option<CompareResult>,
    /// The actual analysis produced
-   pub analysis: crate::types::ConventionalAnalysis,
+   pub analysis:      crate::types::ConventionalAnalysis,
    /// The actual commit message produced
    pub final_message: String,
    /// Error if any
-   pub error: Option<String>,
+   pub error:         Option<String>,
 }
 
 /// Test runner configuration
@@ -34,19 +33,15 @@ pub struct TestRunner {
    /// Fixtures directory
    pub fixtures_dir: std::path::PathBuf,
    /// Config to use for analysis
-   pub config: CommitConfig,
+   pub config:       CommitConfig,
    /// Filter pattern for fixture names
-   pub filter: Option<String>,
+   pub filter:       Option<String>,
 }
 
 impl TestRunner {
    /// Create a new test runner
    pub fn new(fixtures_dir: impl Into<std::path::PathBuf>, config: CommitConfig) -> Self {
-      Self {
-         fixtures_dir: fixtures_dir.into(),
-         config,
-         filter: None,
-      }
+      Self { fixtures_dir: fixtures_dir.into(), config, filter: None }
    }
 
    /// Set filter pattern
@@ -63,9 +58,10 @@ impl TestRunner {
       for name in fixture_names {
          // Apply filter if set
          if let Some(pattern) = &self.filter
-            && !name.contains(pattern) {
-               continue;
-            }
+            && !name.contains(pattern)
+         {
+            continue;
+         }
 
          let result = self.run_fixture(&name);
          results.push(result);
@@ -137,10 +133,10 @@ impl TestRunner {
 
       let final_commit = ConventionalCommit {
          commit_type: analysis.commit_type.clone(),
-         scope:       analysis.scope.clone(),
+         scope: analysis.scope.clone(),
          summary,
-         body:        detail_points,
-         footers:     vec![],
+         body: detail_points,
+         footers: vec![],
       };
       let final_message = format_commit_message(&final_commit);
 
@@ -150,13 +146,7 @@ impl TestRunner {
          .as_ref()
          .map(|g| compare_analysis(&g.analysis, &analysis));
 
-      Ok(RunResult {
-         name: name.to_string(),
-         comparison,
-         analysis,
-         final_message,
-         error: None,
-      })
+      Ok(RunResult { name: name.to_string(), comparison, analysis, final_message, error: None })
    }
 
    /// Update golden files for all fixtures
@@ -166,9 +156,10 @@ impl TestRunner {
 
       for name in fixture_names {
          if let Some(pattern) = &self.filter
-            && !name.contains(pattern) {
-               continue;
-            }
+            && !name.contains(pattern)
+         {
+            continue;
+         }
 
          self.update_fixture(&name)?;
          updated.push(name);
@@ -198,11 +189,11 @@ impl TestRunner {
 /// Summary of test run
 #[derive(Debug, Default)]
 pub struct TestSummary {
-   pub total: usize,
-   pub passed: usize,
-   pub failed: usize,
+   pub total:     usize,
+   pub passed:    usize,
+   pub failed:    usize,
    pub no_golden: usize,
-   pub errors: usize,
+   pub errors:    usize,
 }
 
 impl TestSummary {

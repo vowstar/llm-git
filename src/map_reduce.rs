@@ -1,7 +1,7 @@
 //! Map-reduce pattern for large diff analysis
 //!
-//! When diffs exceed the token threshold, this module splits analysis across files,
-//! then synthesizes results for accurate classification.
+//! When diffs exceed the token threshold, this module splits analysis across
+//! files, then synthesizes results for accurate classification.
 
 use std::path::Path;
 
@@ -30,7 +30,8 @@ pub struct FileObservation {
 /// Minimum files to justify map-reduce overhead (below this, unified is fine)
 const MIN_FILES_FOR_MAP_REDUCE: usize = 4;
 
-/// Maximum tokens per file in map phase (leave headroom for prompt template + context)
+/// Maximum tokens per file in map phase (leave headroom for prompt template +
+/// context)
 const MAX_FILE_TOKENS: usize = 50_000;
 
 /// Check if map-reduce should be used
@@ -55,7 +56,9 @@ pub fn should_use_map_reduce(diff: &str, config: &CommitConfig, counter: &TokenC
 
    // Use map-reduce for 4+ files, or if any single file would need truncation
    file_count >= MIN_FILES_FOR_MAP_REDUCE
-      || files.iter().any(|f| f.token_estimate(counter) > MAX_FILE_TOKENS)
+      || files
+         .iter()
+         .any(|f| f.token_estimate(counter) > MAX_FILE_TOKENS)
 }
 
 /// Maximum files to include in context header (prevent token explosion)
@@ -104,7 +107,8 @@ fn generate_context_header(files: &[FileDiff], current_file: &str) -> String {
    lines.join("\n")
 }
 
-/// Infer a brief description of what a file likely contains based on name/content
+/// Infer a brief description of what a file likely contains based on
+/// name/content
 fn infer_file_description(filename: &str, content: &str) -> &'static str {
    let filename_lower = filename.to_lowercase();
 
@@ -112,7 +116,10 @@ fn infer_file_description(filename: &str, content: &str) -> &'static str {
    if filename_lower.contains("test") {
       return "test file";
    }
-   if Path::new(filename).extension().is_some_and(|e| e.eq_ignore_ascii_case("md")) {
+   if Path::new(filename)
+      .extension()
+      .is_some_and(|e| e.eq_ignore_ascii_case("md"))
+   {
       return "documentation";
    }
    let ext = Path::new(filename).extension();
@@ -132,7 +139,8 @@ fn infer_file_description(filename: &str, content: &str) -> &'static str {
    if filename_lower.ends_with("mod.rs") || filename_lower.ends_with("lib.rs") {
       return "module exports";
    }
-   if filename_lower.ends_with("main.rs") || filename_lower.ends_with("main.go")
+   if filename_lower.ends_with("main.rs")
+      || filename_lower.ends_with("main.go")
       || filename_lower.ends_with("main.py")
    {
       return "entry point";
@@ -159,7 +167,6 @@ fn map_phase(
    config: &CommitConfig,
    counter: &TokenCounter,
 ) -> Result<Vec<FileObservation>> {
-
    // Process files in parallel using rayon
    let observations: Vec<Result<FileObservation>> = files
       .par_iter()
@@ -233,13 +240,17 @@ fn map_single_file(
       let status = response.status();
 
       if status.is_server_error() {
-         let error_text = response.text().unwrap_or_else(|_| "Unknown error".to_string());
+         let error_text = response
+            .text()
+            .unwrap_or_else(|_| "Unknown error".to_string());
          eprintln!("{}", crate::style::error(&format!("Server error {status}: {error_text}")));
          return Ok((true, None)); // Retry
       }
 
       if !status.is_success() {
-         let error_text = response.text().unwrap_or_else(|_| "Unknown error".to_string());
+         let error_text = response
+            .text()
+            .unwrap_or_else(|_| "Unknown error".to_string());
          return Err(CommitGenError::ApiError { status: status.as_u16(), body: error_text });
       }
 
@@ -267,12 +278,15 @@ fn map_single_file(
                CommitGenError::Other(format!("Failed to parse observation response: {e}"))
             })?;
 
-            return Ok((false, Some(FileObservation {
-               file:         filename.to_string(),
-               observations: obs.observations,
-               additions:    0, // Will be filled from FileDiff
-               deletions:    0,
-            })));
+            return Ok((
+               false,
+               Some(FileObservation {
+                  file:         filename.to_string(),
+                  observations: obs.observations,
+                  additions:    0, // Will be filled from FileDiff
+                  deletions:    0,
+               }),
+            ));
          }
       }
 
@@ -280,12 +294,15 @@ fn map_single_file(
       if let Some(content) = &message.content {
          let obs: FileObservationResponse =
             serde_json::from_str(content.trim()).map_err(CommitGenError::JsonError)?;
-         return Ok((false, Some(FileObservation {
-            file:         filename.to_string(),
-            observations: obs.observations,
-            additions:    0,
-            deletions:    0,
-         })));
+         return Ok((
+            false,
+            Some(FileObservation {
+               file:         filename.to_string(),
+               observations: obs.observations,
+               additions:    0,
+               deletions:    0,
+            }),
+         ));
       }
 
       Err(CommitGenError::Other("No observation found in API response".to_string()))
@@ -338,13 +355,17 @@ pub fn reduce_phase(
       let status = response.status();
 
       if status.is_server_error() {
-         let error_text = response.text().unwrap_or_else(|_| "Unknown error".to_string());
+         let error_text = response
+            .text()
+            .unwrap_or_else(|_| "Unknown error".to_string());
          eprintln!("{}", crate::style::error(&format!("Server error {status}: {error_text}")));
          return Ok((true, None)); // Retry
       }
 
       if !status.is_success() {
-         let error_text = response.text().unwrap_or_else(|_| "Unknown error".to_string());
+         let error_text = response
+            .text()
+            .unwrap_or_else(|_| "Unknown error".to_string());
          return Err(CommitGenError::ApiError { status: status.as_u16(), body: error_text });
       }
 
@@ -587,23 +608,17 @@ fn build_analysis_tool(type_enum: &[&str]) -> Tool {
    }
 }
 
-fn build_api_request(
-   model: &str,
-   temperature: f32,
-   tools: Vec<Tool>,
-   prompt: &str,
-) -> ApiRequest {
+fn build_api_request(model: &str, temperature: f32, tools: Vec<Tool>, prompt: &str) -> ApiRequest {
    let tool_name = tools.first().map(|t| t.function.name.clone());
 
    ApiRequest {
-      model:       model.to_string(),
-      max_tokens:  1000,
+      model: model.to_string(),
+      max_tokens: 1000,
       temperature,
-      tool_choice: tool_name.map(|name| {
-         serde_json::json!({ "type": "function", "function": { "name": name } })
-      }),
+      tool_choice: tool_name
+         .map(|name| serde_json::json!({ "type": "function", "function": { "name": name } })),
       tools,
-      messages:    vec![Message { role: "user".to_string(), content: prompt.to_string() }],
+      messages: vec![Message { role: "user".to_string(), content: prompt.to_string() }],
    }
 }
 

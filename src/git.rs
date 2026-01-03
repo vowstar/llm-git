@@ -239,7 +239,8 @@ pub fn git_commit(
    if dry_run {
       let sign_flag = if sign { " -S" } else { "" };
       let hooks_flag = if skip_hooks { " --no-verify" } else { "" };
-      let command = format!("git commit{sign_flag}{hooks_flag} -m \"{}\"", message.replace('\n', "\\n"));
+      let command =
+         format!("git commit{sign_flag}{hooks_flag} -m \"{}\"", message.replace('\n', "\\n"));
       println!("\n{}", style::boxed_message("DRY RUN", &command, 60));
       return Ok(());
    }
@@ -270,7 +271,11 @@ pub fn git_commit(
 
    let stdout = String::from_utf8_lossy(&output.stdout);
    println!("\n{stdout}");
-   println!("{} {}", style::success(style::icons::SUCCESS), style::success("Successfully committed!"));
+   println!(
+      "{} {}",
+      style::success(style::icons::SUCCESS),
+      style::success("Successfully committed!")
+   );
 
    Ok(())
 }
@@ -515,15 +520,15 @@ pub struct StylePatterns {
    /// Percentage of commits using scopes (0.0-100.0)
    pub scope_usage_pct: f32,
    /// Common verbs with counts (sorted by count descending)
-   pub common_verbs: Vec<(String, usize)>,
+   pub common_verbs:    Vec<(String, usize)>,
    /// Average summary length in chars
-   pub avg_length: usize,
+   pub avg_length:      usize,
    /// Summary length range (min, max)
-   pub length_range: (usize, usize),
+   pub length_range:    (usize, usize),
    /// Percentage of commits starting with lowercase (0.0-100.0)
-   pub lowercase_pct: f32,
+   pub lowercase_pct:   f32,
    /// Top scopes with counts (sorted by count descending)
-   pub top_scopes: Vec<(String, usize)>,
+   pub top_scopes:      Vec<(String, usize)>,
 }
 
 impl StylePatterns {
@@ -531,10 +536,7 @@ impl StylePatterns {
    pub fn format_for_prompt(&self) -> String {
       let mut lines = Vec::new();
 
-      lines.push(format!(
-         "Scope usage: {:.0}% of commits use scopes",
-         self.scope_usage_pct
-      ));
+      lines.push(format!("Scope usage: {:.0}% of commits use scopes", self.scope_usage_pct));
 
       if !self.common_verbs.is_empty() {
          let verbs: Vec<_> = self
@@ -551,10 +553,7 @@ impl StylePatterns {
          self.avg_length, self.length_range.0, self.length_range.1
       ));
 
-      lines.push(format!(
-         "Capitalization: {:.0}% start lowercase",
-         self.lowercase_pct
-      ));
+      lines.push(format!("Capitalization: {:.0}% start lowercase", self.lowercase_pct));
 
       if !self.top_scopes.is_empty() {
          let scopes: Vec<_> = self
@@ -635,10 +634,7 @@ pub fn extract_style_patterns(commits: &[String]) -> Option<StylePatterns> {
    let length_range = if lengths.is_empty() {
       (0, 0)
    } else {
-      (
-         *lengths.iter().min().unwrap_or(&0),
-         *lengths.iter().max().unwrap_or(&0),
-      )
+      (*lengths.iter().min().unwrap_or(&0), *lengths.iter().max().unwrap_or(&0))
    };
 
    Some(StylePatterns {

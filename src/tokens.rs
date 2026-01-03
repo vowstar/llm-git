@@ -13,20 +13,16 @@ use crate::config::CommitConfig;
 
 /// Create a `TokenCounter` from config values.
 pub fn create_token_counter(config: &CommitConfig) -> TokenCounter {
-   TokenCounter::new(
-      &config.api_base_url,
-      config.api_key.as_deref(),
-      &config.analysis_model,
-   )
+   TokenCounter::new(&config.api_base_url, config.api_key.as_deref(), &config.analysis_model)
 }
 
 /// Token counter with cascading fallback.
 pub struct TokenCounter {
-   client: reqwest::Client,
+   client:       reqwest::Client,
    api_base_url: String,
-   api_key: Option<String>,
-   model: String,
-   tiktoken: Option<CoreBPE>,
+   api_key:      Option<String>,
+   model:        String,
+   tiktoken:     Option<CoreBPE>,
 }
 
 impl fmt::Debug for TokenCounter {
@@ -42,11 +38,11 @@ impl TokenCounter {
    /// Create a new token counter for the given API configuration.
    pub fn new(api_base_url: &str, api_key: Option<&str>, model: &str) -> Self {
       Self {
-         client: reqwest::Client::new(),
+         client:       reqwest::Client::new(),
          api_base_url: api_base_url.to_string(),
-         api_key: api_key.map(String::from),
-         model: model.to_string(),
-         tiktoken: get_bpe_from_model(model).ok(),
+         api_key:      api_key.map(String::from),
+         model:        model.to_string(),
+         tiktoken:     get_bpe_from_model(model).ok(),
       }
    }
 
@@ -71,8 +67,9 @@ impl TokenCounter {
       }
    }
 
-   /// Try counting tokens via API (Anthropic-compatible `count_tokens` endpoint).
-   /// Works with Anthropic directly, `LiteLLM`, and other proxies that implement the endpoint.
+   /// Try counting tokens via API (Anthropic-compatible `count_tokens`
+   /// endpoint). Works with Anthropic directly, `LiteLLM`, and other proxies
+   /// that implement the endpoint.
    async fn try_api_count(&self, text: &str) -> Option<usize> {
       let api_key = self.api_key.as_ref()?;
 
@@ -81,7 +78,8 @@ impl TokenCounter {
          return None;
       }
 
-      // Try Anthropic-compatible count_tokens endpoint (works with proxies like LiteLLM)
+      // Try Anthropic-compatible count_tokens endpoint (works with proxies like
+      // LiteLLM)
       let resp = self
          .client
          .post(format!("{}/messages/count_tokens", self.api_base_url))
