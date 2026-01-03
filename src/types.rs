@@ -283,7 +283,7 @@ pub fn default_categories() -> Vec<CategoryConfig> {
 // === Changelog types ===
 
 /// Category for changelog entries (Keep a Changelog format)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ChangelogCategory {
    Added,
    Changed,
@@ -723,16 +723,57 @@ pub struct ConventionalCommit {
    pub footers:     Vec<String>,
 }
 
+/// A single detail point from the analysis with optional changelog metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnalysisDetail {
+   /// The detail text (past-tense sentence)
+   pub text: String,
+   /// Changelog category if this detail is user-visible
+   #[serde(default, skip_serializing_if = "Option::is_none")]
+   pub changelog_category: Option<ChangelogCategory>,
+   /// Whether this detail should appear in the changelog
+   #[serde(default)]
+   pub user_visible: bool,
+}
+
+impl AnalysisDetail {
+   /// Create a simple detail without changelog metadata (backward compatibility)
+   pub fn simple(text: impl Into<String>) -> Self {
+      Self { text: text.into(), changelog_category: None, user_visible: false }
+   }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConventionalAnalysis {
    #[serde(rename = "type")]
    pub commit_type: CommitType,
    #[serde(default, deserialize_with = "deserialize_optional_scope")]
    pub scope:       Option<Scope>,
-   #[serde(default, deserialize_with = "deserialize_string_vec")]
-   pub body:        Vec<String>,
+   /// Structured detail points with optional changelog metadata
+   #[serde(default, deserialize_with = "deserialize_analysis_details")]
+   pub details:     Vec<AnalysisDetail>,
    #[serde(default, deserialize_with = "deserialize_string_vec")]
    pub issue_refs:  Vec<String>,
+}
+
+impl ConventionalAnalysis {
+   /// Get the detail texts as a simple Vec<String> (for summary generation)
+   pub fn body_texts(&self) -> Vec<String> {
+      self.details.iter().map(|d| d.text.clone()).collect()
+   }
+
+   /// Get user-visible details grouped by changelog category
+   pub fn changelog_entries(&self) -> std::collections::HashMap<ChangelogCategory, Vec<String>> {
+      let mut entries = std::collections::HashMap::new();
+      for detail in &self.details {
+         if detail.user_visible
+            && let Some(category) = detail.changelog_category
+         {
+            entries.entry(category).or_insert_with(Vec::new).push(detail.text.clone());
+         }
+      }
+      entries
+   }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1032,6 +1073,11 @@ pub struct Args {
    /// Disable automatic changelog updates
    #[arg(long)]
    pub no_changelog: bool,
+
+   // === Debug args ===
+   /// Save intermediate outputs (diff, analysis, summary, changelog) to directory
+   #[arg(long)]
+   pub debug_output: Option<PathBuf>,
 }
 
 impl Default for Args {
@@ -1067,6 +1113,7 @@ impl Default for Args {
          compose_max_commits:     None,
          compose_test_after_each: false,
          no_changelog:            false,
+         debug_output:            None,
       }
    }
 }
@@ -1076,6 +1123,57 @@ where
 {
    let value = Value::deserialize(deserializer)?;
    Ok(value_to_string_vec(value))
+}
+
+/// Deserialize analysis details from either structured format or plain strings
+fn deserialize_analysis_details<'de, D>(
+   deserializer: D,
+) -> std::result::Result<Vec<AnalysisDetail>, D::Error>
+where
+   D: serde::Deserializer<'de>,
+{
+   let value = Value::deserialize(deserializer)?;
+   match value {
+      Value::Array(arr) => {
+         let mut details = Vec::with_capacity(arr.len());
+         for item in arr {
+            let detail = match item {
+               // New structured format: {"text": "...", "changelog_category": "Added", ...}
+               Value::Object(obj) => {
+                  let text = obj
+                     .get("text")
+                     .and_then(Value::as_str)
+                     .map(String::from)
+                     .unwrap_or_default();
+                  let changelog_category = obj
+                     .get("changelog_category")
+                     .and_then(Value::as_str)
+                     .map(ChangelogCategory::from_name);
+                  let user_visible =
+                     obj.get("user_visible").and_then(Value::as_bool).unwrap_or(false);
+                  AnalysisDetail { text, changelog_category, user_visible }
+               },
+               // Old format: plain string
+               Value::String(s) => AnalysisDetail::simple(s),
+               _ => continue,
+            };
+            if !detail.text.is_empty() {
+               details.push(detail);
+            }
+         }
+         Ok(details)
+      },
+      Value::String(s) => {
+         // Handle edge case where LLM returns a single string
+         if s.is_empty() {
+            Ok(Vec::new())
+         } else {
+            Ok(vec![AnalysisDetail::simple(s)])
+         }
+      },
+      Value::Null => Ok(Vec::new()),
+      _ => Ok(Vec::new()),
+   }
 }
 
 fn extract_strings_from_malformed_json(input: &str) -> Vec<String> {
@@ -1515,49 +1613,59 @@ mod tests {
    }
 
    #[test]
-   fn test_body_array_with_trailing_punctuation() {
-      // Test the fix for LLM returning body as stringified JSON with trailing
-      // punctuation
+   fn test_details_array_parsing() {
+      // Test parsing of details array in various formats
       let test_cases = [
-         // Case 1: trailing period after closing quote
-         r#"{"type":"feat","body":"[\"item1\", \"item2\"]".,"issue_refs":[]}"#,
-         // Case 2: trailing quote and period
-         r#"{"type":"feat","body":"[\"item1\", \"item2\"]\"."#,
-         // Case 3: just trailing period
-         r#"{"type":"feat","body":"[\"item1\", \"item2\"]."#,
-         // Case 4: multiple trailing characters
-         r#"{"type":"feat","body":"[\"item1\", \"item2\"]\".,;"#,
+         // New structured format
+         r#"{"type":"feat","details":[{"text":"item1"},{"text":"item2"}],"issue_refs":[]}"#,
+         // Old plain string format (backward compatibility)
+         r#"{"type":"feat","details":["item1","item2"],"issue_refs":[]}"#,
       ];
 
       for (idx, json) in test_cases.iter().enumerate() {
          let result: serde_json::Result<ConventionalAnalysis> = serde_json::from_str(json);
          match result {
             Ok(analysis) => {
+               let body_texts = analysis.body_texts();
                assert_eq!(
-                  analysis.body.len(),
+                  body_texts.len(),
                   2,
                   "Case {idx}: Expected 2 body items, got {}",
-                  analysis.body.len()
+                  body_texts.len()
                );
-               assert_eq!(analysis.body[0], "item1", "Case {idx}: First item mismatch");
-               assert_eq!(analysis.body[1], "item2", "Case {idx}: Second item mismatch");
+               assert_eq!(body_texts[0], "item1", "Case {idx}: First item mismatch");
+               assert_eq!(body_texts[1], "item2", "Case {idx}: Second item mismatch");
             },
             Err(e) => {
-               // If direct parsing fails, try extracting just the body field
-               eprintln!(
-                  "Case {idx} warning: Full parse failed ({e}), testing body field directly"
-               );
-               let body_str = r#"["item1", "item2"]"."#;
-               let cleaned_value = serde_json::Value::String(body_str.to_string());
-               let body_vec = value_to_string_vec(cleaned_value);
-               assert_eq!(
-                  body_vec.len(),
-                  2,
-                  "Case {idx}: Expected 2 items from value_to_string_vec"
-               );
+               panic!("Case {idx}: Failed to parse: {e}");
             },
          }
       }
+   }
+
+   #[test]
+   fn test_analysis_detail_with_changelog() {
+      // Test structured detail with changelog metadata
+      let json = r#"{
+         "type": "feat",
+         "details": [
+            {"text": "Added new API endpoint", "changelog_category": "Added", "user_visible": true},
+            {"text": "Refactored internal code", "user_visible": false}
+         ],
+         "issue_refs": []
+      }"#;
+
+      let analysis: ConventionalAnalysis = serde_json::from_str(json).unwrap();
+      assert_eq!(analysis.details.len(), 2);
+      assert_eq!(analysis.details[0].text, "Added new API endpoint");
+      assert_eq!(analysis.details[0].changelog_category, Some(ChangelogCategory::Added));
+      assert!(analysis.details[0].user_visible);
+      assert!(!analysis.details[1].user_visible);
+
+      // Test changelog_entries helper
+      let entries = analysis.changelog_entries();
+      assert_eq!(entries.len(), 1);
+      assert!(entries.contains_key(&ChangelogCategory::Added));
    }
 
    #[test]

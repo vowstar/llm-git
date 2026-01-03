@@ -186,9 +186,10 @@ fn generate_for_commit(
 
    // Phase 1: Analysis
    let ctx = AnalysisContext {
-      user_context:   None, // No user context for bulk rewrite
-      recent_commits: None, // No recent commits for rewrite mode
-      common_scopes:  None, // No common scopes for rewrite mode
+      user_context:    None, // No user context for bulk rewrite
+      recent_commits:  None, // No recent commits for rewrite mode
+      common_scopes:   None, // No common scopes for rewrite mode
+      project_context: None, // No project context for rewrite mode
    };
    let analysis = generate_conventional_analysis(
       &stat,
@@ -200,11 +201,12 @@ fn generate_for_commit(
    )?;
 
    // Phase 2: Summary
+   let body_texts = analysis.body_texts();
    let summary = generate_summary_from_analysis(
       &stat,
       analysis.commit_type.as_str(),
       analysis.scope.as_ref().map(|s| s.as_str()),
-      &analysis.body,
+      &body_texts,
       None, // No user context in rewrite mode
       config,
    )?;
@@ -216,7 +218,7 @@ fn generate_for_commit(
       commit_type: analysis.commit_type,
       scope: analysis.scope,
       summary,
-      body: analysis.body,
+      body: body_texts,
       footers: vec![], // Issue refs are inlined in body items now
    };
 

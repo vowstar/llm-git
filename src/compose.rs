@@ -742,19 +742,15 @@ pub fn execute_compose(
       // Generate commit message using existing infrastructure
       println!("  {}", style::info("Generating commit message..."));
       let ctx = AnalysisContext {
-         user_context:   Some(&group.rationale),
-         recent_commits: None, // No recent commits for compose mode
-         common_scopes:  None, // No common scopes for compose mode
+         user_context:    Some(&group.rationale),
+         recent_commits:  None, // No recent commits for compose mode
+         common_scopes:   None, // No common scopes for compose mode
+         project_context: None, // No project context for compose mode
       };
       let message_analysis =
          generate_conventional_analysis(&stat, &diff, &config.analysis_model, "", &ctx, config)?;
 
-      let ConventionalAnalysis {
-         commit_type: analysis_commit_type,
-         scope: analysis_scope,
-         body: analysis_body,
-         issue_refs: _,
-      } = message_analysis;
+      let analysis_body = message_analysis.body_texts();
 
       let summary = crate::api::generate_summary_from_analysis(
          &stat,
@@ -768,12 +764,12 @@ pub fn execute_compose(
       let final_commit_type = if dependency_only {
          CommitType::new("build")?
       } else {
-         analysis_commit_type
+         message_analysis.commit_type
       };
 
       let mut commit = ConventionalCommit {
          commit_type: final_commit_type,
-         scope: analysis_scope,
+         scope: message_analysis.scope,
          summary,
          body: analysis_body,
          footers: vec![],

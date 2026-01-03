@@ -243,6 +243,7 @@ pub fn render_analysis_prompt(
    recent_commits: Option<&str>,
    common_scopes: Option<&str>,
    types_description: Option<&str>,
+   project_context: Option<&str>,
 ) -> Result<String> {
    // Try to load template dynamically (supports user-added templates)
    let template_content = load_template_file("analysis", variant)?;
@@ -260,6 +261,9 @@ pub fn render_analysis_prompt(
    }
    if let Some(types) = types_description {
       context.insert("types_description", types);
+   }
+   if let Some(ctx) = project_context {
+      context.insert("project_context", ctx);
    }
 
    // Render using render_str for dynamic templates

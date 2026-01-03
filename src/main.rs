@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use analysis::extract_scope_candidates;
 use api::{
    AnalysisContext, fallback_summary, generate_conventional_analysis,
@@ -16,6 +18,14 @@ use llm_git::{*, style};
 use normalization::{format_commit_message, post_process_commit_message};
 use types::{Args, ConventionalCommit, Mode, resolve_model_name};
 use validation::{check_type_scope_consistency, validate_commit_message};
+
+/// Save debug output to the specified directory
+fn save_debug_output(dir: &Path, filename: &str, content: &str) -> Result<()> {
+   std::fs::create_dir_all(dir)?;
+   let path = dir.join(filename);
+   std::fs::write(&path, content)?;
+   Ok(())
+}
 
 /// Apply CLI overrides to config
 fn apply_cli_overrides(config: &mut CommitConfig, args: &Args) {
@@ -85,6 +95,12 @@ fn run_generation(config: &CommitConfig, args: &Args) -> Result<ConventionalComm
    let diff = get_git_diff(&args.mode, args.target.as_deref(), &args.dir, config)?;
    let stat = get_git_stat(&args.mode, args.target.as_deref(), &args.dir, config)?;
 
+   // Save debug outputs if requested
+   if let Some(ref debug_dir) = args.debug_output {
+      save_debug_output(debug_dir, "diff.patch", &diff)?;
+      save_debug_output(debug_dir, "stat.txt", &stat)?;
+   }
+
    println!(
       "{} {} {} {}",
       style::dim("›"),
@@ -108,9 +124,11 @@ fn run_generation(config: &CommitConfig, args: &Args) -> Result<ConventionalComm
    };
 
    // Get recent commits for style consistency
-   let (recent_commits_str, common_scopes_str) = match get_recent_commits(&args.dir, 10) {
+   let (recent_commits_str, common_scopes_str) = match get_recent_commits(&args.dir, 20) {
       Ok(commits) if !commits.is_empty() => {
-         let commits_display = commits.join("\n");
+         // Extract structured style patterns
+         let style_patterns = git::extract_style_patterns(&commits);
+         let style_str = style_patterns.map(|p| p.format_for_prompt());
 
          let scopes = get_common_scopes(&args.dir, 100)
             .ok()
@@ -124,10 +142,14 @@ fn run_generation(config: &CommitConfig, args: &Args) -> Result<ConventionalComm
                   .join(", ")
             });
 
-         (Some(commits_display), scopes)
+         (style_str, scopes)
       },
       _ => (None, None),
    };
+
+   // Detect repo metadata for context
+   let repo_meta = llm_git::repo::RepoMetadata::detect(std::path::Path::new(&args.dir));
+   let project_context_str = repo_meta.format_for_prompt();
 
    // Generate conventional commit analysis
    let context = if args.context.is_empty() {
@@ -138,9 +160,10 @@ fn run_generation(config: &CommitConfig, args: &Args) -> Result<ConventionalComm
    let (scope_candidates_str, _is_wide) =
       extract_scope_candidates(&args.mode, args.target.as_deref(), &args.dir, config)?;
    let ctx = AnalysisContext {
-      user_context:   context.as_deref(),
-      recent_commits: recent_commits_str.as_deref(),
-      common_scopes:  common_scopes_str.as_deref(),
+      user_context:    context.as_deref(),
+      recent_commits:  recent_commits_str.as_deref(),
+      common_scopes:   common_scopes_str.as_deref(),
+      project_context: project_context_str.as_deref(),
    };
    let analysis = style::with_spinner("Generating conventional commit analysis", || {
       generate_conventional_analysis(
@@ -153,6 +176,12 @@ fn run_generation(config: &CommitConfig, args: &Args) -> Result<ConventionalComm
       )
    })?;
 
+   // Save analysis debug output
+   if let Some(ref debug_dir) = args.debug_output {
+      let analysis_json = serde_json::to_string_pretty(&analysis)?;
+      save_debug_output(debug_dir, "analysis.json", &analysis_json)?;
+   }
+
    // Log scope selection
    if let Some(ref scope) = analysis.scope {
       println!("{} {} {}", style::dim("›"), style::dim("scope:"), style::scope(&scope.to_string()));
@@ -160,7 +189,7 @@ fn run_generation(config: &CommitConfig, args: &Args) -> Result<ConventionalComm
       println!("{} {}", style::dim("›"), style::dim("scope: (none)"));
    }
 
-   let detail_points = analysis.body.clone();
+   let detail_points = analysis.body_texts();
    let summary = style::with_spinner("Creating summary", || {
       generate_summary_from_analysis(
          &stat,
@@ -175,13 +204,23 @@ fn run_generation(config: &CommitConfig, args: &Args) -> Result<ConventionalComm
       fallback_summary(&stat, &detail_points, analysis.commit_type.as_str(), config)
    });
 
+   // Save summary debug output
+   if let Some(ref debug_dir) = args.debug_output {
+      let summary_json = serde_json::json!({
+         "summary": summary.as_str(),
+         "commit_type": analysis.commit_type.as_str(),
+         "scope": analysis.scope.as_ref().map(|s| s.as_str()),
+      });
+      save_debug_output(debug_dir, "summary.json", &serde_json::to_string_pretty(&summary_json)?)?;
+   }
+
    let footers = build_footers(args);
 
    Ok(ConventionalCommit {
       commit_type: analysis.commit_type,
       scope: analysis.scope,
       summary,
-      body: analysis.body,
+      body: detail_points,
       footers,
    })
 }
@@ -396,6 +435,13 @@ fn main() -> Result<()> {
 
    // Format and display
    let formatted_message = format_commit_message(&commit_msg);
+
+   // Save final commit message if debug output requested
+   if let Some(ref debug_dir) = args.debug_output {
+      save_debug_output(debug_dir, "final.txt", &formatted_message)?;
+      let commit_json = serde_json::to_string_pretty(&commit_msg)?;
+      save_debug_output(debug_dir, "commit.json", &commit_json)?;
+   }
 
    println!("\n{}", style::boxed_message("Generated Commit Message", &formatted_message, style::term_width()));
 

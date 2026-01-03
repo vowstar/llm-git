@@ -509,6 +509,148 @@ fn extract_scope_from_commit(commit_msg: &str) -> Option<String> {
    None
 }
 
+/// Quantified style patterns extracted from commit history
+#[derive(Debug, Clone)]
+pub struct StylePatterns {
+   /// Percentage of commits using scopes (0.0-100.0)
+   pub scope_usage_pct: f32,
+   /// Common verbs with counts (sorted by count descending)
+   pub common_verbs: Vec<(String, usize)>,
+   /// Average summary length in chars
+   pub avg_length: usize,
+   /// Summary length range (min, max)
+   pub length_range: (usize, usize),
+   /// Percentage of commits starting with lowercase (0.0-100.0)
+   pub lowercase_pct: f32,
+   /// Top scopes with counts (sorted by count descending)
+   pub top_scopes: Vec<(String, usize)>,
+}
+
+impl StylePatterns {
+   /// Format patterns for prompt injection
+   pub fn format_for_prompt(&self) -> String {
+      let mut lines = Vec::new();
+
+      lines.push(format!(
+         "Scope usage: {:.0}% of commits use scopes",
+         self.scope_usage_pct
+      ));
+
+      if !self.common_verbs.is_empty() {
+         let verbs: Vec<_> = self
+            .common_verbs
+            .iter()
+            .take(5)
+            .map(|(v, c)| format!("{v} ({c})"))
+            .collect();
+         lines.push(format!("Common verbs: {}", verbs.join(", ")));
+      }
+
+      lines.push(format!(
+         "Average length: {} chars (range: {}-{})",
+         self.avg_length, self.length_range.0, self.length_range.1
+      ));
+
+      lines.push(format!(
+         "Capitalization: {:.0}% start lowercase",
+         self.lowercase_pct
+      ));
+
+      if !self.top_scopes.is_empty() {
+         let scopes: Vec<_> = self
+            .top_scopes
+            .iter()
+            .take(5)
+            .map(|(s, c)| format!("{s} ({c})"))
+            .collect();
+         lines.push(format!("Top scopes: {}", scopes.join(", ")));
+      }
+
+      lines.join("\n")
+   }
+}
+
+/// Extract style patterns from commit history
+pub fn extract_style_patterns(commits: &[String]) -> Option<StylePatterns> {
+   if commits.is_empty() {
+      return None;
+   }
+
+   let mut scope_count = 0;
+   let mut lowercase_count = 0;
+   let mut verb_counts: HashMap<String, usize> = HashMap::new();
+   let mut scope_counts: HashMap<String, usize> = HashMap::new();
+   let mut lengths = Vec::new();
+
+   for commit in commits {
+      // Parse: type(scope): summary
+      if let Some(colon_pos) = commit.find(':') {
+         let prefix = &commit[..colon_pos];
+         let summary = commit[colon_pos + 1..].trim();
+
+         // Check for scope
+         if let Some(paren_start) = prefix.find('(')
+            && let Some(paren_end) = prefix.find(')')
+         {
+            scope_count += 1;
+            let scope = &prefix[paren_start + 1..paren_end];
+            *scope_counts.entry(scope.to_string()).or_insert(0) += 1;
+         }
+
+         // Check capitalization of summary
+         if let Some(first_char) = summary.chars().next() {
+            if first_char.is_lowercase() {
+               lowercase_count += 1;
+            }
+
+            // Extract first word as verb
+            let first_word = summary.split_whitespace().next().unwrap_or("");
+            if !first_word.is_empty() {
+               *verb_counts.entry(first_word.to_lowercase()).or_insert(0) += 1;
+            }
+         }
+
+         lengths.push(summary.len());
+      }
+   }
+
+   let total = commits.len();
+   let scope_usage_pct = (scope_count as f32 / total as f32) * 100.0;
+   let lowercase_pct = (lowercase_count as f32 / total as f32) * 100.0;
+
+   // Sort verbs by count
+   let mut common_verbs: Vec<_> = verb_counts.into_iter().collect();
+   common_verbs.sort_by(|a, b| b.1.cmp(&a.1));
+
+   // Sort scopes by count
+   let mut top_scopes: Vec<_> = scope_counts.into_iter().collect();
+   top_scopes.sort_by(|a, b| b.1.cmp(&a.1));
+
+   // Calculate length stats
+   let avg_length = if lengths.is_empty() {
+      0
+   } else {
+      lengths.iter().sum::<usize>() / lengths.len()
+   };
+   let length_range = if lengths.is_empty() {
+      (0, 0)
+   } else {
+      (
+         *lengths.iter().min().unwrap_or(&0),
+         *lengths.iter().max().unwrap_or(&0),
+      )
+   };
+
+   Some(StylePatterns {
+      scope_usage_pct,
+      common_verbs,
+      avg_length,
+      length_range,
+      lowercase_pct,
+      top_scopes,
+   })
+}
+
 /// Rewrite git history with new commit messages
 pub fn rewrite_history(
    commits: &[CommitMetadata],

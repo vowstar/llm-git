@@ -15,11 +15,13 @@ use crate::{
 #[derive(Default)]
 pub struct AnalysisContext<'a> {
    /// User-provided context
-   pub user_context:   Option<&'a str>,
+   pub user_context:    Option<&'a str>,
    /// Recent commits for style learning
-   pub recent_commits: Option<&'a str>,
+   pub recent_commits:  Option<&'a str>,
    /// Common scopes for suggestions
-   pub common_scopes:  Option<&'a str>,
+   pub common_scopes:   Option<&'a str>,
+   /// Project context (language, framework) for terminology
+   pub project_context: Option<&'a str>,
 }
 
 /// Build HTTP client with timeouts from config
@@ -211,12 +213,27 @@ pub fn generate_conventional_analysis<'a>(
                      "type": "string",
                      "description": "Optional scope (module/component). Omit if unclear or multi-component."
                   },
-                  "body": {
+                  "details": {
                      "type": "array",
-                     "description": "Array of 0-6 detail items (empty if no supporting details).",
+                     "description": "Array of 0-6 detail items with changelog metadata.",
                      "items": {
-                        "type": "string",
-                        "description": "Detail about change, starting with past-tense verb, ending with period"
+                        "type": "object",
+                        "properties": {
+                           "text": {
+                              "type": "string",
+                              "description": "Detail about change, starting with past-tense verb, ending with period"
+                           },
+                           "changelog_category": {
+                              "type": "string",
+                              "enum": ["Added", "Changed", "Fixed", "Deprecated", "Removed", "Security"],
+                              "description": "Changelog category if user-visible. Omit for internal changes."
+                           },
+                           "user_visible": {
+                              "type": "boolean",
+                              "description": "True if this change affects users/API and should appear in changelog"
+                           }
+                        },
+                        "required": ["text", "user_visible"]
                      }
                   },
                   "issue_refs": {
@@ -227,7 +244,7 @@ pub fn generate_conventional_analysis<'a>(
                      }
                   }
                }),
-               required:   vec!["type".to_string(), "body".to_string(), "issue_refs".to_string()],
+               required:   vec!["type".to_string(), "details".to_string(), "issue_refs".to_string()],
             },
          },
       };
@@ -252,6 +269,7 @@ pub fn generate_conventional_analysis<'a>(
                   ctx.recent_commits,
                   ctx.common_scopes,
                   Some(&types_desc),
+                  ctx.project_context,
                )?;
 
                if let Some(user_ctx) = ctx.user_context {

@@ -138,6 +138,18 @@ pub fn run_changelog_flow(args: &crate::types::Args, config: &CommitConfig) -> R
          continue;
       }
 
+      // Save changelog debug output if requested
+      if let Some(ref debug_dir) = args.debug_output {
+         let _ = std::fs::create_dir_all(debug_dir);
+         let changelog_json: HashMap<String, Vec<String>> = new_entries
+            .iter()
+            .map(|(cat, entries)| (cat.as_str().to_string(), entries.clone()))
+            .collect();
+         if let Ok(json_str) = serde_json::to_string_pretty(&changelog_json) {
+            let _ = std::fs::write(debug_dir.join("changelog.json"), json_str);
+         }
+      }
+
       // Write entries to changelog
       let updated = write_entries(&changelog_content, &unreleased, &new_entries);
       std::fs::write(&boundary.changelog_path, updated).map_err(|e| {
