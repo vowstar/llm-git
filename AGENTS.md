@@ -16,25 +16,25 @@ Git commit message generator using AI via LiteLLM. Generates conventional commit
 **Build:**
 ```bash
 cargo build --release
-cargo build --release --bin llm-git  # Main binary only
+cargo build --release --bin lgit  # Main binary only
 ```
 
 **Run:**
 ```bash
 # Standard mode
-cargo run --release --bin llm-git                              # Analyze & commit staged changes
-cargo run --release --bin llm-git -- --dry-run                 # Preview without committing
-cargo run --release --bin llm-git -- --mode=unstaged           # Analyze unstaged (no commit)
-cargo run --release --bin llm-git -- --mode=commit --target=HEAD~1  # Analyze specific commit
-cargo run --release --bin llm-git -- --copy                    # Copy message to clipboard
-cargo run --release --bin llm-git -- -m opus                   # Use Opus model
-cargo run --release --bin llm-git -- Fixed regression from PR #123  # Add context
+cargo run --release --bin lgit                              # Analyze & commit staged changes
+cargo run --release --bin lgit -- --dry-run                 # Preview without committing
+cargo run --release --bin lgit -- --mode=unstaged           # Analyze unstaged (no commit)
+cargo run --release --bin lgit -- --mode=commit --target=HEAD~1  # Analyze specific commit
+cargo run --release --bin lgit -- --copy                    # Copy message to clipboard
+cargo run --release --bin lgit -- -m opus                   # Use Opus model
+cargo run --release --bin lgit -- Fixed regression from PR #123  # Add context
 
 # Compose mode - split large changesets into atomic commits
-cargo run --release --bin llm-git -- --compose                 # Execute compose
-cargo run --release --bin llm-git -- --compose --compose-preview  # Preview splits only
-cargo run --release --bin llm-git -- --compose --compose-max-commits 3  # Limit to 3 commits
-cargo run --release --bin llm-git -- --compose --compose-test-after-each  # Run tests after each
+cargo run --release --bin lgit -- --compose                 # Execute compose
+cargo run --release --bin lgit -- --compose --compose-preview  # Preview splits only
+cargo run --release --bin lgit -- --compose --compose-max-commits 3  # Limit to 3 commits
+cargo run --release --bin lgit -- --compose --compose-test-after-each  # Run tests after each
 ```
 
 **Environment:**

@@ -29,7 +29,7 @@ fn render_report(results: &[RunResult], fixtures: &[Fixture], summary: &TestSumm
 <head>
    <meta charset="UTF-8">
    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-   <title>llm-git Fixture Test Report</title>
+   <title>lgit Fixture Test Report</title>
    <style>
       :root {{
          --bg: #0d1117;
@@ -183,7 +183,7 @@ fn render_report(results: &[RunResult], fixtures: &[Fixture], summary: &TestSumm
 </head>
 <body>
    <div class="container">
-      <h1>llm-git Fixture Test Report</h1>
+      <h1>lgit Fixture Test Report</h1>
       <p class="timestamp">Generated: {}</p>
 
       <div class="summary">

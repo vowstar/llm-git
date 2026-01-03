@@ -19,20 +19,20 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact_name: llm-git
-            asset_name: llm-git-linux-x86_64
+            artifact_name: lgit
+            asset_name: lgit-linux-x86_64
           - os: macos-latest
             target: x86_64-apple-darwin
-            artifact_name: llm-git
-            asset_name: llm-git-macos-x86_64
+            artifact_name: lgit
+            asset_name: lgit-macos-x86_64
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact_name: llm-git
-            asset_name: llm-git-macos-arm64
+            artifact_name: lgit
+            asset_name: lgit-macos-arm64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact_name: llm-git.exe
-            asset_name: llm-git-windows-x86_64.exe
+            artifact_name: lgit.exe
+            asset_name: lgit-windows-x86_64.exe
     steps:
       - uses: actions/checkout@v5
 

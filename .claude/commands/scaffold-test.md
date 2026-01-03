@@ -40,7 +40,7 @@ return M
 ```
 Test [SCENARIO NAME] for [FEATURE].
 
-IMPORTANT: Do NOT touch the main repo or build anything. The binary is already installed - use `llm-git` directly.
+IMPORTANT: Do NOT touch the main repo or build anything. The binary is already installed - use `lgit` directly.
 
 Create a temp git repo at /tmp/test-[name]-$$ with:
 1. [Describe initial state - files, commits, config]
@@ -48,7 +48,7 @@ Create a temp git repo at /tmp/test-[name]-$$ with:
 
 Use Lua (.lua) for any source files - keeps scaffolds minimal.
 
-Run `llm-git --dry-run --dir /tmp/test-[name]-$$` (or other flags as needed)
+Run `lgit --dry-run --dir /tmp/test-[name]-$$` (or other flags as needed)
 
 Verify: [Expected behavior]
 Report: PASS/FAIL with details

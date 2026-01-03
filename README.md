@@ -50,8 +50,8 @@ pip install litellm
 export ANTHROPIC_API_KEY=your_key_here
 litellm --port 4000 --model claude-sonnet-4.5
 
-# llm-git uses localhost:4000 by default
-llm-git  # Ready to use!
+# lgit uses localhost:4000 by default
+lgit  # Ready to use!
 ```
 
 **Option B: Direct API Access**
@@ -59,14 +59,14 @@ llm-git  # Ready to use!
 # Set API URL and key via environment variables
 export LLM_GIT_API_URL=https://api.anthropic.com/v1
 export LLM_GIT_API_KEY=your_api_key_here
-llm-git
+lgit
 ```
 
 **Option C: OpenRouter**
 ```bash
 export LLM_GIT_API_URL=https://openrouter.ai/api/v1
 export LLM_GIT_API_KEY=your_openrouter_key
-llm-git
+lgit
 ```
 
 **Option D: Configuration File**
@@ -74,7 +74,7 @@ llm-git
 # Create ~/.config/llm-git/config.toml (see Configuration section)
 mkdir -p ~/.config/llm-git
 # Edit config.toml with your preferences
-llm-git
+lgit
 ```
 
 ### Usage
@@ -83,50 +83,50 @@ llm-git
 git add .
 
 # Generate and commit
-llm-git                                     # Analyze & commit staged changes
-llm-git --dry-run                          # Preview without committing
-llm-git --mode=unstaged                    # Analyze unstaged (no commit)
-llm-git --copy                             # Copy message to clipboard
-llm-git Fixed regression from PR #123      # Add context (trailing text)
+lgit                                     # Analyze & commit staged changes
+lgit --dry-run                          # Preview without committing
+lgit --mode=unstaged                    # Analyze unstaged (no commit)
+lgit --copy                             # Copy message to clipboard
+lgit Fixed regression from PR #123      # Add context (trailing text)
 ```
 
 ## Commands
 
 **Basic Usage:**
 ```bash
-llm-git                                     # Analyze & commit staged changes (default)
-llm-git --dry-run                          # Preview without committing
-llm-git --mode=unstaged                    # Analyze unstaged (no commit)
-llm-git --mode=commit --target=HEAD~1      # Analyze specific commit
-llm-git --copy                             # Copy message to clipboard
-llm-git -m opus                            # Use Opus model (more powerful)
-llm-git -m sonnet                          # Use Sonnet model (default)
-llm-git -S                                 # GPG sign the commit
-llm-git --no-changelog                     # Skip automatic changelog updates
-llm-git Fixed regression from PR #123      # Add context (trailing text)
+lgit                                     # Analyze & commit staged changes (default)
+lgit --dry-run                          # Preview without committing
+lgit --mode=unstaged                    # Analyze unstaged (no commit)
+lgit --mode=commit --target=HEAD~1      # Analyze specific commit
+lgit --copy                             # Copy message to clipboard
+lgit -m opus                            # Use Opus model (more powerful)
+lgit -m sonnet                          # Use Sonnet model (default)
+lgit -S                                 # GPG sign the commit
+lgit --no-changelog                     # Skip automatic changelog updates
+lgit Fixed regression from PR #123      # Add context (trailing text)
 ```
 
 **Compose Mode (Multi-commit generation):**
 ```bash
-llm-git --compose                          # Compose changes into multiple atomic commits
-llm-git --compose --compose-preview        # Preview proposed splits without committing
-llm-git --compose --compose-max-commits 5  # Limit number of commits
-llm-git --compose --compose-test-after-each # Run tests after each commit
+lgit --compose                          # Compose changes into multiple atomic commits
+lgit --compose --compose-preview        # Preview proposed splits without committing
+lgit --compose --compose-max-commits 5  # Limit number of commits
+lgit --compose --compose-test-after-each # Run tests after each commit
 ```
 
 **Rewrite Mode (History rewrite to conventional commits):**
 ```bash
-llm-git --rewrite                          # Rewrite full history (creates backup)
-llm-git --rewrite --rewrite-preview 10     # Preview first 10 commits
-llm-git --rewrite --rewrite-dry-run        # Preview all without applying
-llm-git --rewrite --rewrite-start main~50  # Rewrite last 50 commits only
-llm-git --rewrite --rewrite-parallel 20    # Use 20 parallel API calls
-llm-git --rewrite --rewrite-hide-old-types # Hide old type/scope tags
+lgit --rewrite                          # Rewrite full history (creates backup)
+lgit --rewrite --rewrite-preview 10     # Preview first 10 commits
+lgit --rewrite --rewrite-dry-run        # Preview all without applying
+lgit --rewrite --rewrite-start main~50  # Rewrite last 50 commits only
+lgit --rewrite --rewrite-parallel 20    # Use 20 parallel API calls
+lgit --rewrite --rewrite-hide-old-types # Hide old type/scope tags
 ```
 
 ## Automatic Changelog Maintenance
 
-llm-git automatically maintains CHANGELOG.md files following the [Keep a Changelog](https://keepachangelog.com) format. When you commit, it analyzes your staged changes and appends entries to the `[Unreleased]` section.
+lgit automatically maintains CHANGELOG.md files following the [Keep a Changelog](https://keepachangelog.com) format. When you commit, it analyzes your staged changes and appends entries to the `[Unreleased]` section.
 
 **Features:**
 - **Auto-detection**: Finds all CHANGELOG.md files in your repository
@@ -161,7 +161,7 @@ Changes to `src/main.rs` update the root `CHANGELOG.md`.
 
 **Disabling changelog updates:**
 ```bash
-llm-git --no-changelog                     # Skip for this commit
+lgit --no-changelog                     # Skip for this commit
 ```
 
 Or permanently in config:
@@ -201,15 +201,15 @@ All configuration options can be overridden via environment variables:
 # Use OpenAI instead of Claude
 export LLM_GIT_API_URL=https://api.openai.com/v1
 export LLM_GIT_API_KEY=sk-...
-llm-git --analysis-model=gpt-4o --summary-model=gpt-4o-mini
+lgit --analysis-model=gpt-4o --summary-model=gpt-4o-mini
 
 # Use custom config location
 export LLM_GIT_CONFIG=~/my-project/.llm-git-config.toml
-llm-git
+lgit
 
 # Enable verbose debugging
 export LLM_GIT_VERBOSE=1
-llm-git
+lgit
 ```
 
 ## Testing
@@ -245,7 +245,7 @@ cargo test --lib                            # Library tests only
 
 ## LLM Call Flows
 
-llm-git uses different strategies depending on the number of files changed:
+lgit uses different strategies depending on the number of files changed:
 
 ### Unified Analysis (≤3 files)
 
