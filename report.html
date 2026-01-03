@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+   <meta charset="UTF-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+   <title>llm-git Fixture Test Report</title>
+   <style>
+      :root {
+         --bg: #0d1117;
+         --fg: #c9d1d9;
+         --fg-muted: #8b949e;
+         --border: #30363d;
+         --bg-card: #161b22;
+         --green: #3fb950;
+         --red: #f85149;
+         --yellow: #d29922;
+         --blue: #58a6ff;
+         --purple: #a371f7;
+      }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
+         background: var(--bg);
+         color: var(--fg);
+         line-height: 1.6;
+         padding: 2rem;
+      }
+      .container { max-width: 1400px; margin: 0 auto; }
+      h1 { margin-bottom: 1rem; font-weight: 600; }
+      .summary {
+         display: flex;
+         gap: 1rem;
+         margin-bottom: 2rem;
+         flex-wrap: wrap;
+      }
+      .stat {
+         background: var(--bg-card);
+         border: 1px solid var(--border);
+         border-radius: 6px;
+         padding: 1rem 1.5rem;
+         min-width: 120px;
+      }
+      .stat-value { font-size: 2rem; font-weight: 600; }
+      .stat-label { color: var(--fg-muted); font-size: 0.875rem; }
+      .stat.passed .stat-value { color: var(--green); }
+      .stat.failed .stat-value { color: var(--red); }
+      .stat.no-golden .stat-value { color: var(--yellow); }
+      .stat.errors .stat-value { color: var(--red); }
+
+      .fixture {
+         background: var(--bg-card);
+         border: 1px solid var(--border);
+         border-radius: 6px;
+         margin-bottom: 1.5rem;
+         overflow: hidden;
+      }
+      .fixture-header {
+         padding: 1rem 1.5rem;
+         border-bottom: 1px solid var(--border);
+         display: flex;
+         justify-content: space-between;
+         align-items: center;
+         cursor: pointer;
+      }
+      .fixture-header:hover { background: rgba(255,255,255,0.03); }
+      .fixture-name { font-weight: 600; font-size: 1.1rem; }
+      .fixture-status { padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.875rem; }
+      .fixture-status.passed { background: rgba(63, 185, 80, 0.15); color: var(--green); }
+      .fixture-status.failed { background: rgba(248, 81, 73, 0.15); color: var(--red); }
+      .fixture-status.no-golden { background: rgba(210, 153, 34, 0.15); color: var(--yellow); }
+      .fixture-status.error { background: rgba(248, 81, 73, 0.15); color: var(--red); }
+
+      .fixture-content {
+         display: none;
+         padding: 1.5rem;
+      }
+      .fixture.expanded .fixture-content { display: block; }
+
+      .comparison {
+         display: grid;
+         grid-template-columns: 1fr 1fr;
+         gap: 1.5rem;
+      }
+      @media (max-width: 1000px) {
+         .comparison { grid-template-columns: 1fr; }
+      }
+      .comparison-column { }
+      .comparison-column h3 {
+         font-size: 0.875rem;
+         color: var(--fg-muted);
+         text-transform: uppercase;
+         letter-spacing: 0.05em;
+         margin-bottom: 0.75rem;
+      }
+      .comparison-column h3.golden { color: var(--purple); }
+      .comparison-column h3.actual { color: var(--blue); }
+
+      .message-box {
+         background: var(--bg);
+         border: 1px solid var(--border);
+         border-radius: 6px;
+         padding: 1rem;
+         font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+         font-size: 0.875rem;
+         white-space: pre-wrap;
+         word-break: break-word;
+      }
+
+      .diff-row {
+         display: flex;
+         gap: 1rem;
+         margin-bottom: 0.5rem;
+         align-items: baseline;
+      }
+      .diff-label {
+         min-width: 80px;
+         font-weight: 500;
+         font-size: 0.875rem;
+      }
+      .diff-value { flex: 1; }
+      .diff-match { color: var(--green); }
+      .diff-mismatch { color: var(--red); }
+      .diff-arrow { color: var(--fg-muted); margin: 0 0.5rem; }
+
+      .details-list {
+         list-style: none;
+         font-size: 0.875rem;
+      }
+      .details-list li {
+         padding: 0.25rem 0;
+         padding-left: 1rem;
+         position: relative;
+      }
+      .details-list li::before {
+         content: "•";
+         position: absolute;
+         left: 0;
+         color: var(--fg-muted);
+      }
+
+      .error-message {
+         background: rgba(248, 81, 73, 0.1);
+         border: 1px solid var(--red);
+         color: var(--red);
+         padding: 1rem;
+         border-radius: 6px;
+         font-family: monospace;
+         font-size: 0.875rem;
+      }
+
+      .timestamp {
+         color: var(--fg-muted);
+         font-size: 0.875rem;
+         margin-bottom: 1rem;
+      }
+   </style>
+</head>
+<body>
+   <div class="container">
+      <h1>llm-git Fixture Test Report</h1>
+      <p class="timestamp">Generated: 2026-01-03 06:29:00 UTC</p>
+
+      <div class="summary">
+         <div class="stat">
+            <div class="stat-value">4</div>
+            <div class="stat-label">Total</div>
+         </div>
+         <div class="stat passed">
+            <div class="stat-value">4</div>
+            <div class="stat-label">Passed</div>
+         </div>
+         <div class="stat failed">
+            <div class="stat-value">0</div>
+            <div class="stat-label">Failed</div>
+         </div>
+         <div class="stat no-golden">
+            <div class="stat-value">0</div>
+            <div class="stat-label">No Golden</div>
+         </div>
+         <div class="stat errors">
+            <div class="stat-value">0</div>
+            <div class="stat-label">Errors</div>
+         </div>
+      </div>
+
+      <div class="fixture passed">
+         <div class="fixture-header">
+            <span class="fixture-name">feat-hybrid-pq-signatures</span>
+            <span class="fixture-status passed">Passed</span>
+         </div>
+         <div class="fixture-content">
+<div style="margin-bottom: 1.5rem;"><div class="diff-row">
+               <span class="diff-label">Type:</span>
+               <span class="diff-value diff-match">
+                  feat<span class="diff-arrow">→</span>feat
+               </span>
+            </div><div class="diff-row">
+            <span class="diff-label">Scope:</span>
+            <span class="diff-value diff-match">crypto</span>
+         </div><div class="diff-row">
+         <span class="diff-label">Details:</span>
+         <span class="diff-value">5 golden → 5 actual</span>
+      </div></div><div class="comparison"><div class="comparison-column">
+               <h3 class="golden">Golden (Expected)</h3>
+               <div class="message-box">feat(crypto): added Ed25519 hybrid signatures for quantum-safe transition
+
+- Added Ed25519 hybrid signatures to ML-DSA 65 and SPHINCS+ 256f for post-quantum transition safety.
+- Extended public keys, secret keys, and signatures to include both PQ and classical components.
+- Updated verification to require both PQ and Ed25519 signature validation.
+- Introduced HybridPublic, HybridSecret, and HybridSignature internal structs for composite key management.
+- Added explicit length validation with descriptive errors during blob deserialization.</div>
+            </div><div class="comparison-column">
+         <h3 class="actual">Actual (Current)</h3>
+         <div class="message-box">feat(crypto): added Ed25519 hybrid signatures for PQ transition safety
+
+- Added hybrid Ed25519 signatures to ML-DSA 65 and SPHINCS+ 256f for post-quantum transition safety.
+- Implemented HybridPublic, HybridSecret, and HybridSignature wrappers combining PQ and classical keys.
+- Updated verification to require both PQ and Ed25519 signature validation.
+- Extended public/secret key and signature byte lengths to accommodate hybrid format.
+- Added explicit length validation with UnexpectedBlobLen errors during deserialization.</div>
+      </div></div></div></div>
+
+      <div class="fixture passed">
+         <div class="fixture-header">
+            <span class="fixture-name">large-python-migration</span>
+            <span class="fixture-status passed">Passed</span>
+         </div>
+         <div class="fixture-content">
+<div style="margin-bottom: 1.5rem;"><div class="diff-row">
+               <span class="diff-label">Type:</span>
+               <span class="diff-value diff-match">
+                  chore<span class="diff-arrow">→</span>chore
+               </span>
+            </div><div class="diff-row">
+            <span class="diff-label">Scope:</span>
+            <span class="diff-value diff-match">attic</span>
+         </div><div class="diff-row">
+         <span class="diff-label">Details:</span>
+         <span class="diff-value">5 golden → 4 actual</span>
+      </div></div><div class="comparison"><div class="comparison-column">
+               <h3 class="golden">Golden (Expected)</h3>
+               <div class="message-box">chore(attic): removed obsolete kv, http, and vm crates from attic
+
+- Removed tetra-kv crate with RocksDB, LMDB, and in-memory storage backends.
+- Removed HTTP client/server modules including SSE and WebSocket implementations.
+- Removed vm crate containing JavaScript interpreter prototype.
+- Removed vmi-precompile crate for bundled Wasm modules.
+- Added pyproject.toml and updated package.json to use uv for Python environment management.</div>
+            </div><div class="comparison-column">
+         <h3 class="actual">Actual (Current)</h3>
+         <div class="message-box">chore(attic): removed obsolete kv, http, and vm prototypes from attic
+
+- Removed tetra-kv crate with pluggable storage backends (RocksDB, LMDB, MemoryDB) and TTL support.
+- Removed HTTP networking modules including client, server, SSE, and WebSocket implementations.
+- Removed JavaScript VM prototype and vmi-precompile WASM bundling crate.
+- Migrated Python build scripts to use uv package manager and added pyproject.toml workspace configuration.</div>
+      </div></div></div></div>
+
+      <div class="fixture passed">
+         <div class="fixture-header">
+            <span class="fixture-name">refactor-cell-to-controller</span>
+            <span class="fixture-status passed">Passed</span>
+         </div>
+         <div class="fixture-content">
+<div style="margin-bottom: 1.5rem;"><div class="diff-row">
+               <span class="diff-label">Type:</span>
+               <span class="diff-value diff-match">
+                  refactor<span class="diff-arrow">→</span>refactor
+               </span>
+            </div><div class="diff-row">
+            <span class="diff-label">Scope:</span>
+            <span class="diff-value diff-match">actor</span>
+         </div><div class="diff-row">
+         <span class="diff-label">Details:</span>
+         <span class="diff-value">4 golden → 4 actual</span>
+      </div></div><div class="comparison"><div class="comparison-column">
+               <h3 class="golden">Golden (Expected)</h3>
+               <div class="message-box">refactor(actor): renamed Cell to Controller for clearer semantics
+
+- Renamed Cell to Controller throughout actor module for clearer semantics.
+- Renamed cell() methods to controller() and weak_cell() to weak_controller() across ActorRef and WeakActorRef traits.
+- Added try_controller() method to WeakActorRef trait for upgrading weak references.
+- Removed upgrade_cell() method from WeakAddr in favor of try_controller() on trait.</div>
+            </div><div class="comparison-column">
+         <h3 class="actual">Actual (Current)</h3>
+         <div class="message-box">refactor(actor): renamed Cell to Controller for clearer semantics
+
+- Renamed Cell to Controller throughout actor module for clearer semantics.
+- Renamed cell() methods to controller() and weak_cell() to weak_controller() across traits.
+- Added try_controller() method to WeakActorRef trait for optional controller upgrades.
+- Removed upgrade_cell() from WeakAddr in favor of try_controller() on trait.</div>
+      </div></div></div></div>
+
+      <div class="fixture passed">
+         <div class="fixture-header">
+            <span class="fixture-name">small-bugfix</span>
+            <span class="fixture-status passed">Passed</span>
+         </div>
+         <div class="fixture-content">
+<div style="margin-bottom: 1.5rem;"><div class="diff-row">
+               <span class="diff-label">Type:</span>
+               <span class="diff-value diff-match">
+                  fix<span class="diff-arrow">→</span>fix
+               </span>
+            </div><div class="diff-row">
+            <span class="diff-label">Scope:</span>
+            <span class="diff-value diff-match">crypto/threshold</span>
+         </div><div class="diff-row">
+         <span class="diff-label">Details:</span>
+         <span class="diff-value">1 golden → 1 actual</span>
+      </div></div><div class="comparison"><div class="comparison-column">
+               <h3 class="golden">Golden (Expected)</h3>
+               <div class="message-box">fix(crypto/threshold): corrected BLS validation order in VSS verification
+
+- Moved BLS early-return after VSS verification to ensure proper validation before signing.</div>
+            </div><div class="comparison-column">
+         <h3 class="actual">Actual (Current)</h3>
+         <div class="message-box">fix(crypto/threshold): corrected BLS validation order in VSS verification
+
+- Moved BLS early-return after VSS verification to ensure proper validation before signing.</div>
+      </div></div></div></div>
+
+   </div>
+   <script>
+      document.querySelectorAll('.fixture-header').forEach(header => {
+         header.addEventListener('click', () => {
+            header.parentElement.classList.toggle('expanded');
+         });
+      });
+      // Expand failed fixtures by default
+      document.querySelectorAll('.fixture.failed, .fixture.error').forEach(f => {
+         f.classList.add('expanded');
+      });
+   </script>
+</body>
+</html>

@@ -145,8 +145,7 @@ impl Fixture {
          })?
       } else {
          return Err(CommitGenError::Other(format!(
-            "Fixture '{}' missing meta.toml",
-            name
+            "Fixture '{name}' missing meta.toml"
          )));
       };
 
@@ -259,11 +258,10 @@ pub fn discover_fixtures(fixtures_dir: &Path) -> Result<Vec<String>> {
       }
 
       // Check if it has meta.toml (valid fixture)
-      if path.join("meta.toml").exists() {
-         if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+      if path.join("meta.toml").exists()
+         && let Some(name) = path.file_name().and_then(|n| n.to_str()) {
             fixtures.push(name.to_string());
          }
-      }
    }
 
    fixtures.sort();

@@ -62,11 +62,10 @@ impl TestRunner {
 
       for name in fixture_names {
          // Apply filter if set
-         if let Some(ref pattern) = self.filter {
-            if !name.contains(pattern) {
+         if let Some(ref pattern) = self.filter
+            && !name.contains(pattern) {
                continue;
             }
-         }
 
          let result = self.run_fixture(&name);
          results.push(result);
@@ -166,11 +165,10 @@ impl TestRunner {
       let mut updated = Vec::new();
 
       for name in fixture_names {
-         if let Some(ref pattern) = self.filter {
-            if !name.contains(pattern) {
+         if let Some(ref pattern) = self.filter
+            && !name.contains(pattern) {
                continue;
             }
-         }
 
          self.update_fixture(&name)?;
          updated.push(name);
@@ -185,8 +183,7 @@ impl TestRunner {
 
       if let Some(err) = result.error {
          return Err(crate::error::CommitGenError::Other(format!(
-            "Failed to run fixture '{}': {}",
-            name, err
+            "Failed to run fixture '{name}': {err}"
          )));
       }
 
@@ -232,7 +229,7 @@ impl TestSummary {
    }
 
    /// Check if all tests passed
-   pub fn all_passed(&self) -> bool {
+   pub const fn all_passed(&self) -> bool {
       self.failed == 0 && self.errors == 0
    }
 }

@@ -26,14 +26,14 @@ pub fn compare_analysis(golden: &ConventionalAnalysis, actual: &ConventionalAnal
    let type_match = golden.commit_type == actual.commit_type;
 
    let scope_match = golden.scope == actual.scope;
-   let scope_diff = if !scope_match {
+   let scope_diff = if scope_match {
+      None
+   } else {
       Some(format!(
          "{} → {}",
-         golden.scope.as_ref().map(|s| s.as_str()).unwrap_or("null"),
-         actual.scope.as_ref().map(|s| s.as_str()).unwrap_or("null")
+         golden.scope.as_ref().map_or("null", |s| s.as_str()),
+         actual.scope.as_ref().map_or("null", |s| s.as_str())
       ))
-   } else {
-      None
    };
 
    let golden_detail_count = golden.details.len();
@@ -47,7 +47,7 @@ pub fn compare_analysis(golden: &ConventionalAnalysis, actual: &ConventionalAnal
       format!(
          "✓ {} | {} | {} details",
          actual.commit_type.as_str(),
-         actual.scope.as_ref().map(|s| s.as_str()).unwrap_or("(no scope)"),
+         actual.scope.as_ref().map_or("(no scope)", |s| s.as_str()),
          actual_detail_count
       )
    } else if passed {

@@ -342,6 +342,10 @@ mod tests {
       CommitConfig::default()
    }
 
+   fn test_counter() -> TokenCounter {
+      TokenCounter::new("http://localhost:4000", None, "claude-sonnet-4.5")
+   }
+
    #[test]
    fn test_parse_diff_simple() {
       let diff = r#"diff --git a/src/main.rs b/src/main.rs
@@ -707,6 +711,7 @@ index 123..000 100644
    #[test]
    fn test_smart_truncate_diff_under_limit() {
       let config = test_config();
+      let counter = test_counter();
       let diff = r"diff --git a/src/main.rs b/src/main.rs
 index 123..456 100644
 --- a/src/main.rs
@@ -714,7 +719,7 @@ index 123..456 100644
 @@ -1,2 +1,3 @@
 +use std::io;
  fn main() {}";
-      let result = smart_truncate_diff(diff, 10000, &config);
+      let result = smart_truncate_diff(diff, 10000, &config, &counter);
       assert!(result.contains("use std::io"));
       assert!(result.contains("src/main.rs"));
    }
@@ -722,13 +727,14 @@ index 123..456 100644
    #[test]
    fn test_smart_truncate_diff_over_limit() {
       let config = test_config();
+      let counter = test_counter();
       let lines: Vec<String> = (0..200).map(|i| format!("+line {i}")).collect();
       let content = lines.join("\n");
       let diff = format!(
          "diff --git a/src/main.rs b/src/main.rs\nindex 123..456 100644\n--- a/src/main.rs\n+++ \
           b/src/main.rs\n@@ -1,1 +1,200 @@\n{content}"
       );
-      let result = smart_truncate_diff(&diff, 500, &config);
+      let result = smart_truncate_diff(&diff, 500, &config, &counter);
       assert!(result.len() <= 600); // Allow some overhead
       assert!(result.contains("src/main.rs"));
    }
@@ -736,6 +742,7 @@ index 123..456 100644
    #[test]
    fn test_smart_truncate_diff_priority_allocation() {
       let config = test_config();
+      let counter = test_counter();
       // High priority source file and low priority markdown
       let diff = r"diff --git a/src/lib.rs b/src/lib.rs
 index 111..222 100644
@@ -752,7 +759,7 @@ index 333..444 100644
 @@ -1,1 +1,50 @@
 +# Documentation
 +More docs here";
-      let result = smart_truncate_diff(diff, 300, &config);
+      let result = smart_truncate_diff(diff, 300, &config, &counter);
       // Should prioritize lib.rs over README.md
       assert!(result.contains("src/lib.rs"));
       assert!(result.contains("important_function") || result.contains("truncated"));
@@ -761,6 +768,7 @@ index 333..444 100644
    #[test]
    fn test_smart_truncate_diff_binary_excluded() {
       let config = test_config();
+      let counter = test_counter();
       let diff = r"diff --git a/image.png b/image.png
 index 123..456 100644
 Binary files a/image.png and b/image.png differ
@@ -771,7 +779,7 @@ index 789..abc 100644
 @@ -1,1 +1,2 @@
  fn main() {}
 +fn helper() {}";
-      let result = smart_truncate_diff(diff, 10000, &config);
+      let result = smart_truncate_diff(diff, 10000, &config, &counter);
       assert!(result.contains("src/main.rs"));
       assert!(result.contains("image.png"));
       assert!(result.contains("Binary files"));
@@ -780,6 +788,7 @@ index 789..abc 100644
    #[test]
    fn test_smart_truncate_diff_excluded_files() {
       let config = test_config();
+      let counter = test_counter();
       let diff = r"diff --git a/Cargo.lock b/Cargo.lock
 index 123..456 100644
 --- a/Cargo.lock
@@ -793,7 +802,7 @@ index 789..abc 100644
 @@ -1,1 +1,2 @@
  fn main() {}
 +fn helper() {}";
-      let result = smart_truncate_diff(diff, 10000, &config);
+      let result = smart_truncate_diff(diff, 10000, &config, &counter);
       assert!(!result.contains("Cargo.lock"));
       assert!(result.contains("src/main.rs"));
    }
@@ -801,19 +810,21 @@ index 789..abc 100644
    #[test]
    fn test_smart_truncate_diff_all_files_excluded() {
       let config = test_config();
+      let counter = test_counter();
       let diff = r"diff --git a/Cargo.lock b/Cargo.lock
 index 123..456 100644
 --- a/Cargo.lock
 +++ b/Cargo.lock
 @@ -1,1 +1,2 @@
 +dependency update";
-      let result = smart_truncate_diff(diff, 10000, &config);
+      let result = smart_truncate_diff(diff, 10000, &config, &counter);
       assert!(result.contains("No relevant files"));
    }
 
    #[test]
    fn test_smart_truncate_diff_header_preservation() {
       let config = test_config();
+      let counter = test_counter();
       let lines: Vec<String> = (0..100).map(|i| format!("+line {i}")).collect();
       let content = lines.join("\n");
       let diff = format!(
@@ -821,7 +832,7 @@ index 123..456 100644
           b/src/a.rs\n@@ -1,1 +1,100 @@\n{content}\ndiff --git a/src/b.rs b/src/b.rs\nindex \
           333..444 100644\n--- a/src/b.rs\n+++ b/src/b.rs\n@@ -1,1 +1,100 @@\n{content}"
       );
-      let result = smart_truncate_diff(&diff, 600, &config);
+      let result = smart_truncate_diff(&diff, 600, &config, &counter);
       // Both file headers should be present
       assert!(result.contains("src/a.rs"));
       assert!(result.contains("src/b.rs"));

@@ -1106,6 +1106,10 @@ pub struct Args {
    /// Custom fixtures directory
    #[arg(long, requires = "test")]
    pub fixtures_dir: Option<PathBuf>,
+
+   /// Generate HTML report of test results
+   #[arg(long, requires = "test")]
+   pub test_report: Option<PathBuf>,
 }
 
 impl Default for Args {
@@ -1149,6 +1153,7 @@ impl Default for Args {
          test_filter:             None,
          test_list:               false,
          fixtures_dir:            None,
+         test_report:             None,
       }
    }
 }

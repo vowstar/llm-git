@@ -289,7 +289,7 @@ pub fn generate_conventional_analysis<'a>(
          .header("content-type", "application/json");
 
       // Add Authorization header if API key is configured
-      if let Some(ref api_key) = config.api_key {
+      if let Some(api_key) = &config.api_key {
          request_builder = request_builder.header("Authorization", format!("Bearer {api_key}"));
       }
 
@@ -524,7 +524,7 @@ pub fn generate_summary_from_analysis<'a>(
    let mut last_failure_reason: Option<String> = None;
 
    loop {
-      let additional_constraint = if let Some(ref reason) = last_failure_reason {
+      let additional_constraint = if let Some(reason) = &last_failure_reason {
          format!("\n\nCRITICAL: Previous attempt failed because {reason}. Correct this.")
       } else {
          String::new()
@@ -599,7 +599,7 @@ pub fn generate_summary_from_analysis<'a>(
             .header("content-type", "application/json");
 
          // Add Authorization header if API key is configured
-         if let Some(ref api_key) = config.api_key {
+         if let Some(api_key) = &config.api_key {
             request_builder = request_builder.header("Authorization", format!("Bearer {api_key}"));
          }
 

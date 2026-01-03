@@ -51,7 +51,7 @@ fn run_test_mode(args: &Args, config: &CommitConfig) -> Result<()> {
    }
 
    // Handle --test-add
-   if let Some(ref commit_hash) = args.test_add {
+   if let Some(commit_hash) = &args.test_add {
       let name = args.test_name.as_ref().ok_or_else(|| {
          CommitGenError::Other("--test-name is required when using --test-add".to_string())
       })?;
@@ -94,9 +94,9 @@ fn run_test_mode(args: &Args, config: &CommitConfig) -> Result<()> {
 
    // Print results
    for result in &results {
-      if let Some(ref err) = result.error {
+      if let Some(err) = &result.error {
          println!("✗ {} - ERROR: {}", result.name, err);
-      } else if let Some(ref cmp) = result.comparison {
+      } else if let Some(cmp) = &result.comparison {
          println!("{} {} - {}",
             if cmp.passed { "✓" } else { "✗" },
             result.name,
@@ -115,6 +115,25 @@ fn run_test_mode(args: &Args, config: &CommitConfig) -> Result<()> {
       summary.total, summary.passed, summary.failed, summary.no_golden, summary.errors
    );
 
+   // Generate HTML report if requested
+   if let Some(report_path) = &args.test_report {
+      // Load fixtures for comparison display
+      let fixture_names = testing::fixture::discover_fixtures(&fixtures_dir)?;
+      let mut fixtures = Vec::new();
+      for name in &fixture_names {
+         if let Some(pattern) = &args.test_filter
+            && !name.contains(pattern) {
+               continue;
+            }
+         if let Ok(f) = testing::Fixture::load(&fixtures_dir, name) {
+            fixtures.push(f);
+         }
+      }
+
+      testing::generate_html_report(&results, &fixtures, report_path)?;
+      println!("\nHTML report generated: {}", report_path.display());
+   }
+
    if !summary.all_passed() {
       return Err(CommitGenError::Other("Some tests failed".to_string()));
    }
@@ -132,7 +151,7 @@ fn add_fixture(
 ) -> Result<()> {
    use llm_git::testing::{Fixture, FixtureContext, FixtureEntry, FixtureInput, FixtureMeta, Manifest};
 
-   println!("Creating fixture '{}' from commit {}...", name, commit_hash);
+   println!("Creating fixture '{name}' from commit {commit_hash}...");
 
    // Get diff and stat
    let diff = git::get_git_diff(&Mode::Commit, Some(commit_hash), repo_dir, config)?;
@@ -178,7 +197,7 @@ fn add_fixture(
       meta: FixtureMeta {
          source_repo:   repo_dir.to_string(),
          source_commit: commit_hash.to_string(),
-         description:   format!("Fixture from commit {}", commit_hash),
+         description:   format!("Fixture from commit {commit_hash}"),
          captured_at:   chrono::Utc::now().to_rfc3339(),
          tags:          vec![],
       },
@@ -205,7 +224,7 @@ fn add_fixture(
    manifest.add(
       name.to_string(),
       FixtureEntry {
-         description: format!("From commit {}", commit_hash),
+         description: format!("From commit {commit_hash}"),
          tags:        vec![],
       },
    );
@@ -219,10 +238,10 @@ fn add_fixture(
 
 /// Apply CLI overrides to config
 fn apply_cli_overrides(config: &mut CommitConfig, args: &Args) {
-   if let Some(ref model) = args.model {
+   if let Some(model) = &args.model {
       config.analysis_model = resolve_model_name(model);
    }
-   if let Some(ref summary_model) = args.summary_model {
+   if let Some(summary_model) = &args.summary_model {
       config.summary_model = resolve_model_name(summary_model);
    }
    if let Some(temp) = args.temperature {
@@ -242,7 +261,7 @@ fn apply_cli_overrides(config: &mut CommitConfig, args: &Args) {
 
 /// Load config from args or default
 fn load_config_from_args(args: &Args) -> Result<CommitConfig> {
-   if let Some(ref config_path) = args.config {
+   if let Some(config_path) = &args.config {
       CommitConfig::from_file(config_path)
    } else {
       CommitConfig::load()
@@ -290,7 +309,7 @@ fn run_generation(
    let stat = get_git_stat(&args.mode, args.target.as_deref(), &args.dir, config)?;
 
    // Save debug outputs if requested
-   if let Some(ref debug_dir) = args.debug_output {
+   if let Some(debug_dir) = &args.debug_output {
       save_debug_output(debug_dir, "diff.patch", &diff)?;
       save_debug_output(debug_dir, "stat.txt", &stat)?;
    }
@@ -379,13 +398,13 @@ fn run_generation(
    })?;
 
    // Save analysis debug output
-   if let Some(ref debug_dir) = args.debug_output {
+   if let Some(debug_dir) = &args.debug_output {
       let analysis_json = serde_json::to_string_pretty(&analysis)?;
       save_debug_output(debug_dir, "analysis.json", &analysis_json)?;
    }
 
    // Log scope selection
-   if let Some(ref scope) = analysis.scope {
+   if let Some(scope) = &analysis.scope {
       println!("{} {} {}", style::dim("›"), style::dim("scope:"), style::scope(&scope.to_string()));
    } else {
       println!("{} {}", style::dim("›"), style::dim("scope: (none)"));
@@ -407,7 +426,7 @@ fn run_generation(
    });
 
    // Save summary debug output
-   if let Some(ref debug_dir) = args.debug_output {
+   if let Some(debug_dir) = &args.debug_output {
       let summary_json = serde_json::json!({
          "summary": summary.as_str(),
          "commit_type": analysis.commit_type.as_str(),
@@ -635,7 +654,7 @@ fn main() -> Result<()> {
    let validation_failed =
       validate_and_process(&mut commit_msg, &stat, &detail_points, context.as_deref(), &config);
 
-   if let Some(ref err) = validation_failed {
+   if let Some(err) = &validation_failed {
       eprintln!("Warning: Generated message failed validation even after retry: {err}");
       eprintln!("You may want to manually edit the message before committing.");
    }
@@ -647,7 +666,7 @@ fn main() -> Result<()> {
    let formatted_message = format_commit_message(&commit_msg);
 
    // Save final commit message if debug output requested
-   if let Some(ref debug_dir) = args.debug_output {
+   if let Some(debug_dir) = &args.debug_output {
       save_debug_output(debug_dir, "final.txt", &formatted_message)?;
       let commit_json = serde_json::to_string_pretty(&commit_msg)?;
       save_debug_output(debug_dir, "commit.json", &commit_json)?;

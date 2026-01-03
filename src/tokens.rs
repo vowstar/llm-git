@@ -1,7 +1,7 @@
 //! Token counting with cascading fallback.
 //!
 //! Attempts token counting in order:
-//! 1. API count_tokens (Anthropic-compatible endpoints)
+//! 1. API `count_tokens` (Anthropic-compatible endpoints)
 //! 2. tiktoken (OpenAI/GPT models)
 //! 3. Character estimate (4 chars ≈ 1 token)
 
@@ -11,7 +11,7 @@ use tiktoken_rs::{CoreBPE, get_bpe_from_model};
 
 use crate::config::CommitConfig;
 
-/// Create a TokenCounter from config values.
+/// Create a `TokenCounter` from config values.
 pub fn create_token_counter(config: &CommitConfig) -> TokenCounter {
    TokenCounter::new(
       &config.api_base_url,
@@ -52,7 +52,7 @@ impl TokenCounter {
 
    /// Count tokens for a text string.
    ///
-   /// Tries API count_tokens first, then tiktoken, then 4-char estimate.
+   /// Tries API `count_tokens` first, then tiktoken, then 4-char estimate.
    pub async fn count(&self, text: &str) -> usize {
       // 1. Try API count_tokens (works with Anthropic, LiteLLM, and other proxies)
       if let Some(count) = self.try_api_count(text).await {
@@ -71,8 +71,8 @@ impl TokenCounter {
       }
    }
 
-   /// Try counting tokens via API (Anthropic-compatible count_tokens endpoint).
-   /// Works with Anthropic directly, LiteLLM, and other proxies that implement the endpoint.
+   /// Try counting tokens via API (Anthropic-compatible `count_tokens` endpoint).
+   /// Works with Anthropic directly, `LiteLLM`, and other proxies that implement the endpoint.
    async fn try_api_count(&self, text: &str) -> Option<usize> {
       let api_key = self.api_key.as_ref()?;
 

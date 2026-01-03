@@ -610,10 +610,16 @@ fn build_api_request(
 #[cfg(test)]
 mod tests {
    use super::*;
+   use crate::tokens::TokenCounter;
+
+   fn test_counter() -> TokenCounter {
+      TokenCounter::new("http://localhost:4000", None, "claude-sonnet-4.5")
+   }
 
    #[test]
    fn test_should_use_map_reduce_disabled() {
       let config = CommitConfig { map_reduce_enabled: false, ..Default::default() };
+      let counter = test_counter();
       // Even with many files, disabled means no map-reduce
       let diff = r"diff --git a/a.rs b/a.rs
 @@ -0,0 +1 @@
@@ -627,12 +633,13 @@ diff --git a/c.rs b/c.rs
 diff --git a/d.rs b/d.rs
 @@ -0,0 +1 @@
 +d";
-      assert!(!should_use_map_reduce(diff, &config));
+      assert!(!should_use_map_reduce(diff, &config, &counter));
    }
 
    #[test]
    fn test_should_use_map_reduce_few_files() {
       let config = CommitConfig::default();
+      let counter = test_counter();
       // Only 2 files - below threshold
       let diff = r"diff --git a/a.rs b/a.rs
 @@ -0,0 +1 @@
@@ -640,12 +647,13 @@ diff --git a/d.rs b/d.rs
 diff --git a/b.rs b/b.rs
 @@ -0,0 +1 @@
 +b";
-      assert!(!should_use_map_reduce(diff, &config));
+      assert!(!should_use_map_reduce(diff, &config, &counter));
    }
 
    #[test]
    fn test_should_use_map_reduce_many_files() {
       let config = CommitConfig::default();
+      let counter = test_counter();
       // 5 files - above threshold
       let diff = r"diff --git a/a.rs b/a.rs
 @@ -0,0 +1 @@
@@ -656,13 +664,13 @@ diff --git a/b.rs b/b.rs
 diff --git a/c.rs b/c.rs
 @@ -0,0 +1 @@
 +c
-diff --git a/d.rs b/d.rs
+diff --git a/d.rs d/d.rs
 @@ -0,0 +1 @@
 +d
 diff --git a/e.rs b/e.rs
 @@ -0,0 +1 @@
 +e";
-      assert!(should_use_map_reduce(diff, &config));
+      assert!(should_use_map_reduce(diff, &config, &counter));
    }
 
    #[test]
