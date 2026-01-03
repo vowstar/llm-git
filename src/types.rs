@@ -1,10 +1,387 @@
-use std::{fmt, path::PathBuf};
+use std::{collections::HashMap, fmt, path::PathBuf};
 
 use clap::{Parser, ValueEnum};
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::error::{CommitGenError, Result};
+
+// === Commit type configuration ===
+
+/// Configuration for a commit type (feat, fix, refactor, etc.)
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct TypeConfig {
+   /// When to use this type
+   pub description: String,
+
+   /// Code patterns in diffs that indicate this type
+   #[serde(default)]
+   pub diff_indicators: Vec<String>,
+
+   /// File patterns that suggest this type (e.g., "*.md" for docs)
+   #[serde(default)]
+   pub file_patterns: Vec<String>,
+
+   /// Example scenarios for this type
+   #[serde(default)]
+   pub examples: Vec<String>,
+
+   /// Per-type hint for classification guidance
+   #[serde(default)]
+   pub hint: String,
+}
+
+/// Match rules for mapping commits to changelog categories
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct CategoryMatch {
+   /// Match if commit type is one of these
+   #[serde(default)]
+   pub types: Vec<String>,
+   /// Match if body contains any of these strings (case-insensitive)
+   #[serde(default)]
+   pub body_contains: Vec<String>,
+}
+
+
+
+/// Configuration for a changelog category
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CategoryConfig {
+   /// Category name (e.g., "Added", "Fixed")
+   pub name: String,
+   /// Display header in changelog (defaults to name if not set)
+   #[serde(default)]
+   pub header: Option<String>,
+   /// Match rules for this category
+   #[serde(default)]
+   pub r#match: CategoryMatch,
+   /// If true, this is the fallback category when no other matches
+   #[serde(default)]
+   pub default: bool,
+}
+
+impl CategoryConfig {
+   /// Get the header to display in changelog
+   pub fn header(&self) -> &str {
+      self.header.as_deref().unwrap_or(&self.name)
+   }
+}
+
+/// Default commit types with rich guidance for AI prompts
+/// Order defines priority: first type checked first in decision tree
+pub fn default_types() -> IndexMap<String, TypeConfig> {
+   IndexMap::from([
+      (
+         "feat".to_string(),
+         TypeConfig {
+            description:     "New public API surface OR user-observable capability/behavior change"
+               .to_string(),
+            diff_indicators: vec![
+               "pub fn".to_string(),
+               "pub struct".to_string(),
+               "pub enum".to_string(),
+               "export function".to_string(),
+               "#[arg]".to_string(),
+            ],
+            file_patterns:   vec![],
+            examples:        vec![
+               "Added pub fn process_batch() → feat (new API)".to_string(),
+               "Migrated HTTP client to async → feat (behavior change)".to_string(),
+            ],
+            ..Default::default()
+         },
+      ),
+      (
+         "fix".to_string(),
+         TypeConfig {
+            description:     "Fixes incorrect behavior (bugs, crashes, wrong outputs, race \
+                              conditions)"
+               .to_string(),
+            diff_indicators: vec![
+               "unwrap() → ?".to_string(),
+               "bounds check".to_string(),
+               "off-by-one".to_string(),
+               "error handling".to_string(),
+            ],
+            ..Default::default()
+         },
+      ),
+      (
+         "refactor".to_string(),
+         TypeConfig {
+            description:     "Internal restructuring with provably unchanged behavior".to_string(),
+            diff_indicators: vec![
+               "rename".to_string(),
+               "extract".to_string(),
+               "consolidate".to_string(),
+               "reorganize".to_string(),
+            ],
+            examples:        vec![
+               "Renamed internal module structure → refactor (no API change)".to_string(),
+            ],
+            hint:            "Requires proof: same tests pass, same API. If behavior changes, use \
+                              feat."
+               .to_string(),
+            ..Default::default()
+         },
+      ),
+      (
+         "docs".to_string(),
+         TypeConfig {
+            description:     "Documentation only changes".to_string(),
+            file_patterns:   vec!["*.md".to_string(), "doc comments".to_string()],
+            ..Default::default()
+         },
+      ),
+      (
+         "test".to_string(),
+         TypeConfig {
+            description:     "Adding or modifying tests".to_string(),
+            file_patterns:   vec![
+               "*_test.rs".to_string(),
+               "tests/".to_string(),
+               "*.test.ts".to_string(),
+            ],
+            ..Default::default()
+         },
+      ),
+      (
+         "chore".to_string(),
+         TypeConfig {
+            description:     "Maintenance tasks, dependencies, tooling".to_string(),
+            file_patterns:   vec![
+               ".gitignore".to_string(),
+               "*.lock".to_string(),
+               "config files".to_string(),
+            ],
+            ..Default::default()
+         },
+      ),
+      (
+         "style".to_string(),
+         TypeConfig {
+            description:     "Formatting, whitespace changes (no logic change)".to_string(),
+            diff_indicators: vec!["whitespace".to_string(), "formatting".to_string()],
+            hint:            "Variable/function renames are refactor, not style.".to_string(),
+            ..Default::default()
+         },
+      ),
+      (
+         "perf".to_string(),
+         TypeConfig {
+            description:     "Performance improvements (proven faster)".to_string(),
+            diff_indicators: vec![
+               "optimization".to_string(),
+               "cache".to_string(),
+               "batch".to_string(),
+            ],
+            ..Default::default()
+         },
+      ),
+      (
+         "build".to_string(),
+         TypeConfig {
+            description:     "Build system, dependency changes".to_string(),
+            file_patterns:   vec![
+               "Cargo.toml".to_string(),
+               "package.json".to_string(),
+               "Makefile".to_string(),
+            ],
+            ..Default::default()
+         },
+      ),
+      (
+         "ci".to_string(),
+         TypeConfig {
+            description:     "CI/CD configuration".to_string(),
+            file_patterns:   vec![".github/workflows/".to_string(), ".gitlab-ci.yml".to_string()],
+            ..Default::default()
+         },
+      ),
+      (
+         "revert".to_string(),
+         TypeConfig {
+            description:     "Reverts a previous commit".to_string(),
+            diff_indicators: vec!["Revert".to_string()],
+            ..Default::default()
+         },
+      ),
+   ])
+}
+
+/// Default global hint for cross-type disambiguation
+pub fn default_classifier_hint() -> String {
+   r#"CRITICAL - feat vs refactor:
+- feat: ANY observable behavior change OR new public API
+- refactor: ONLY when provably unchanged (same tests, same API)
+When in doubt, prefer feat over refactor."#
+      .to_string()
+}
+
+/// Default categories matching current hardcoded behavior
+/// Order defines render order; body_contains checked before types
+pub fn default_categories() -> Vec<CategoryConfig> {
+   vec![
+      CategoryConfig {
+         name:    "Breaking".to_string(),
+         header:  Some("Breaking Changes".to_string()),
+         r#match: CategoryMatch {
+            types:         vec![],
+            body_contains: vec!["breaking".to_string(), "incompatible".to_string()],
+         },
+         default: false,
+      },
+      CategoryConfig {
+         name:    "Added".to_string(),
+         header:  None,
+         r#match: CategoryMatch {
+            types:         vec!["feat".to_string()],
+            body_contains: vec![],
+         },
+         default: false,
+      },
+      CategoryConfig {
+         name:    "Changed".to_string(),
+         header:  None,
+         r#match: CategoryMatch::default(),
+         default: true,
+      },
+      CategoryConfig {
+         name:    "Deprecated".to_string(),
+         header:  None,
+         r#match: CategoryMatch::default(),
+         default: false,
+      },
+      CategoryConfig {
+         name:    "Removed".to_string(),
+         header:  None,
+         r#match: CategoryMatch {
+            types:         vec!["revert".to_string()],
+            body_contains: vec![],
+         },
+         default: false,
+      },
+      CategoryConfig {
+         name:    "Fixed".to_string(),
+         header:  None,
+         r#match: CategoryMatch {
+            types:         vec!["fix".to_string()],
+            body_contains: vec![],
+         },
+         default: false,
+      },
+      CategoryConfig {
+         name:    "Security".to_string(),
+         header:  None,
+         r#match: CategoryMatch::default(),
+         default: false,
+      },
+   ]
+}
+
+// === Changelog types ===
+
+/// Category for changelog entries (Keep a Changelog format)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ChangelogCategory {
+   Added,
+   Changed,
+   Fixed,
+   Deprecated,
+   Removed,
+   Security,
+   Breaking,
+}
+
+impl ChangelogCategory {
+   /// Display name for changelog section headers
+   pub fn as_str(&self) -> &'static str {
+      match self {
+         Self::Added => "Added",
+         Self::Changed => "Changed",
+         Self::Fixed => "Fixed",
+         Self::Deprecated => "Deprecated",
+         Self::Removed => "Removed",
+         Self::Security => "Security",
+         Self::Breaking => "Breaking Changes",
+      }
+   }
+
+   /// Parse category from name string (case-insensitive)
+   /// Falls back to Changed for unknown names
+   #[must_use]
+   pub fn from_name(name: &str) -> Self {
+      match name.to_lowercase().as_str() {
+         "added" => Self::Added,
+         "changed" => Self::Changed,
+         "fixed" => Self::Fixed,
+         "deprecated" => Self::Deprecated,
+         "removed" => Self::Removed,
+         "security" => Self::Security,
+         "breaking" | "breaking changes" => Self::Breaking,
+         _ => Self::Changed,
+      }
+   }
+
+   /// Map commit type to changelog category (legacy method, prefer config-based `resolve_category`)
+   pub fn from_commit_type(commit_type: &str, body: &[String]) -> Self {
+      // Check body for breaking change indicators
+      let has_breaking = body.iter().any(|s| {
+         let lower = s.to_lowercase();
+         lower.contains("breaking") || lower.contains("incompatible")
+      });
+
+      if has_breaking {
+         return Self::Breaking;
+      }
+
+      match commit_type {
+         "feat" => Self::Added,
+         "fix" => Self::Fixed,
+         "revert" => Self::Removed,
+         // Everything else: refactor, perf, docs, test, style, build, ci, chore
+         _ => Self::Changed,
+      }
+   }
+
+   /// Order for rendering in changelog (Breaking first, then standard order)
+   pub fn render_order() -> &'static [Self] {
+      &[
+         Self::Breaking,
+         Self::Added,
+         Self::Changed,
+         Self::Deprecated,
+         Self::Removed,
+         Self::Fixed,
+         Self::Security,
+      ]
+   }
+}
+
+/// Maps a CHANGELOG.md to the files it covers
+#[derive(Debug, Clone)]
+pub struct ChangelogBoundary {
+   /// Path to the CHANGELOG.md file
+   pub changelog_path: PathBuf,
+   /// Files within this changelog's boundary
+   pub files: Vec<String>,
+   /// Git diff for these files only
+   pub diff: String,
+   /// Git stat for these files only
+   pub stat: String,
+}
+
+/// Parsed [Unreleased] section from a CHANGELOG.md
+#[derive(Debug, Clone, Default)]
+pub struct UnreleasedSection {
+   /// Line number where [Unreleased] header starts (0-indexed)
+   pub header_line: usize,
+   /// Line number where next version or EOF occurs (0-indexed, exclusive)
+   pub end_line: usize,
+   /// Existing entries by category
+   pub entries: HashMap<ChangelogCategory, Vec<String>>,
+}
 
 #[derive(Debug, Clone, ValueEnum)]
 pub enum Mode {
@@ -650,6 +1027,11 @@ pub struct Args {
    /// Run tests after each commit
    #[arg(long, requires = "compose")]
    pub compose_test_after_each: bool,
+
+   // === Changelog args ===
+   /// Disable automatic changelog updates
+   #[arg(long)]
+   pub no_changelog: bool,
 }
 
 impl Default for Args {
@@ -684,6 +1066,7 @@ impl Default for Args {
          compose_preview:         false,
          compose_max_commits:     None,
          compose_test_after_each: false,
+         no_changelog:            false,
       }
    }
 }

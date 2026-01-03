@@ -4,6 +4,7 @@
 //! conventional commit messages using Claude AI via `LiteLLM`.
 pub mod analysis;
 pub mod api;
+pub mod changelog;
 pub mod compose;
 pub mod config;
 pub mod diff;

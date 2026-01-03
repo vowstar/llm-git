@@ -346,6 +346,14 @@ fn main() -> Result<()> {
       }
    }
 
+   // Run changelog maintenance if not disabled (check both CLI flag and config)
+   if !args.no_changelog && config.changelog_enabled {
+      if let Err(e) = llm_git::changelog::run_changelog_flow(&args, &config) {
+         // Don't fail the commit, just warn
+         eprintln!("Warning: Changelog update failed: {e}");
+      }
+   }
+
    println!("Analyzing {} changes...", match args.mode {
       Mode::Staged => "staged",
       Mode::Commit => "commit",

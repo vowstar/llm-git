@@ -48,6 +48,12 @@ pub enum CommitGenError {
 
    #[error("{0}")]
    Other(String),
+
+   #[error("Failed to parse changelog {path}: {reason}")]
+   ChangelogParseError { path: String, reason: String },
+
+   #[error("No [Unreleased] section found in {path}")]
+   NoUnreleasedSection { path: String },
 }
 
 pub type Result<T> = std::result::Result<T, CommitGenError>;

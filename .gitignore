@@ -23,3 +23,8 @@ Thumbs.db
 
 # Testing
 mutants.out*/
+
+# Claude Code - allow commands to be tracked
+!.claude/
+.claude/*
+!.claude/commands/

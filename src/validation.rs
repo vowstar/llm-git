@@ -6,6 +6,73 @@ use crate::{
    types::ConventionalCommit,
 };
 
+/// Common code file extensions for validation checks
+const CODE_EXTENSIONS: &[&str] = &[
+   // Systems programming
+   "rs", "c", "cpp", "cc", "cxx", "h", "hpp", "hxx", "zig", "nim", "v",
+   // JVM languages
+   "java", "kt", "kts", "scala", "groovy", "clj", "cljs",
+   // .NET languages
+   "cs", "fs", "vb",
+   // Web/scripting
+   "js", "ts", "jsx", "tsx", "mjs", "cjs", "vue", "svelte",
+   // Python ecosystem
+   "py", "pyx", "pxd", "pyi",
+   // Ruby
+   "rb", "rake", "gemspec",
+   // PHP
+   "php",
+   // Go
+   "go",
+   // Swift/Objective-C
+   "swift", "m", "mm",
+   // Lua
+   "lua",
+   // Shell
+   "sh", "bash", "zsh", "fish",
+   // Perl
+   "pl", "pm",
+   // Haskell/ML family
+   "hs", "lhs", "ml", "mli", "elm", "ex", "exs", "erl", "hrl",
+   // Lisp family
+   "lisp", "cl", "el", "scm", "rkt",
+   // Julia
+   "jl",
+   // R
+   "r",
+   // Dart/Flutter
+   "dart",
+   // Crystal
+   "cr",
+   // D
+   "d",
+   // Fortran
+   "f", "f90", "f95", "f03", "f08",
+   // Ada
+   "ada", "adb", "ads",
+   // Cobol
+   "cob", "cbl",
+   // Assembly
+   "asm", "s",
+   // SQL (stored procs)
+   "sql", "plsql",
+   // Prolog
+   "pro",
+   // OCaml/ReasonML
+   "re", "rei",
+   // Nix
+   "nix",
+   // Terraform/HCL
+   "tf", "hcl",
+   // Solidity/blockchain
+   "sol", "move", "cairo",
+];
+
+/// Check if an extension is a code file extension
+fn is_code_extension(ext: &str) -> bool {
+   CODE_EXTENSIONS.iter().any(|&e| e.eq_ignore_ascii_case(ext))
+}
+
 /// Get repository name from git working directory
 fn get_repository_name() -> Result<String> {
    let output = Command::new("git")
@@ -354,12 +421,7 @@ pub fn check_type_scope_consistency(msg: &ConventionalCommit, stat: &str) {
       let has_code = stat.lines().any(|line| {
          let path = line.split('|').next().unwrap_or("").trim();
          let path_obj = std::path::Path::new(&path);
-         path_obj.extension().is_some_and(|ext| {
-            ext.eq_ignore_ascii_case("rs")
-               || ext.eq_ignore_ascii_case("js")
-               || ext.eq_ignore_ascii_case("py")
-               || ext.eq_ignore_ascii_case("go")
-         })
+         path_obj.extension().is_some_and(|ext| is_code_extension(ext.to_str().unwrap_or("")))
       });
       if has_code {
          eprintln!("Warning: Commit type 'style' but code files changed (verify no logic changes)");

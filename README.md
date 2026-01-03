@@ -102,6 +102,7 @@ llm-git --copy                             # Copy message to clipboard
 llm-git -m opus                            # Use Opus model (more powerful)
 llm-git -m sonnet                          # Use Sonnet model (default)
 llm-git -S                                 # GPG sign the commit
+llm-git --no-changelog                     # Skip automatic changelog updates
 llm-git Fixed regression from PR #123      # Add context (trailing text)
 ```
 
@@ -122,6 +123,69 @@ llm-git --rewrite --rewrite-start main~50  # Rewrite last 50 commits only
 llm-git --rewrite --rewrite-parallel 20    # Use 20 parallel API calls
 llm-git --rewrite --rewrite-hide-old-types # Hide old type/scope tags
 ```
+
+## Automatic Changelog Maintenance
+
+llm-git automatically maintains CHANGELOG.md files following the [Keep a Changelog](https://keepachangelog.com) format. When you commit, it analyzes your staged changes and appends entries to the `[Unreleased]` section.
+
+**Features:**
+- **Auto-detection**: Finds all CHANGELOG.md files in your repository
+- **Monorepo support**: Routes changes to the correct changelog based on file paths
+- **Deduplication**: Skips entries that semantically match existing ones (Jaccard similarity ≥0.7)
+- **Category mapping**: Maps commit types to changelog sections (Added, Fixed, Changed, etc.)
+- **Breaking change detection**: Scans commit body for "breaking" or "incompatible" keywords
+
+**How it works:**
+1. Detects CHANGELOG.md files and their "boundaries" (which directories they cover)
+2. For each boundary with staged changes, analyzes the diff
+3. Generates changelog entries from the analysis detail points
+4. Parses the existing `[Unreleased]` section
+5. Deduplicates against existing entries
+6. Writes new entries and stages the modified changelog
+
+**Monorepo boundary detection:**
+```
+project/
+├── CHANGELOG.md              ← covers: src/, docs/, scripts/
+├── packages/
+│   ├── core/
+│   │   ├── CHANGELOG.md      ← covers: packages/core/**
+│   │   └── src/
+│   └── cli/
+│       ├── CHANGELOG.md      ← covers: packages/cli/**
+│       └── src/
+```
+
+Changes to `packages/core/src/lib.rs` update `packages/core/CHANGELOG.md`.
+Changes to `src/main.rs` update the root `CHANGELOG.md`.
+
+**Disabling changelog updates:**
+```bash
+llm-git --no-changelog                     # Skip for this commit
+```
+
+Or permanently in config:
+```toml
+changelog_enabled = false
+```
+
+**Expected CHANGELOG.md format:**
+```markdown
+# Changelog
+
+## [Unreleased]
+
+### Added
+- Existing entry one
+
+### Fixed
+- Existing entry two
+
+## [1.0.0] - 2024-01-01
+...
+```
+
+The `## [Unreleased]` header is required. Entries are inserted at the top of each category section.
 
 ## Environment Variables
 
@@ -167,8 +231,9 @@ cargo test --lib                            # Library tests only
 - `src/error.rs` - Error types
 - `src/git.rs` - Git command wrappers
 - `src/normalization.rs` - Unicode normalization, formatting
-- `src/types.rs` - Type-safe commit types, scopes, summaries
+- `src/types.rs` - Type-safe commit types, scopes, summaries, config types
 - `src/validation.rs` - Commit message validation
+- `src/changelog.rs` - Automatic CHANGELOG.md maintenance
 
 **Core workflow:**
 1. `get_git_diff()` + `get_git_stat()` - Extract staged/unstaged/commit changes
@@ -280,6 +345,9 @@ temperature = 0.2                                # Low for consistency (0.0-1.0)
 # GPG Signing
 gpg_sign = false                                 # Sign commits by default (or use --sign/-S)
 
+# Changelog Maintenance
+changelog_enabled = true                         # Auto-update CHANGELOG.md (default: true)
+
 # File Exclusions
 excluded_files = [                               # Files to exclude from diff
     "Cargo.lock",
@@ -332,6 +400,139 @@ api_key = "sk-..."
 analysis_model = "gpt-4o"
 summary_model = "gpt-4o-mini"
 temperature = 0.3  # OpenAI models may benefit from slightly higher temp
+```
+
+### Commit Types and Changelog Categories
+
+Customize commit types (used in AI prompts) and changelog category mappings.
+
+**Type order matters** — first type checked first in the decision tree:
+
+```toml
+# Global hint for cross-type disambiguation
+classifier_hint = """
+CRITICAL - feat vs refactor:
+- feat: ANY observable behavior change OR new public API
+- refactor: ONLY when provably unchanged (same tests, same API)
+When in doubt, prefer feat over refactor.
+"""
+
+# Commit types with rich guidance for AI prompts
+# Order defines priority: first type checked first in decision tree
+[types.feat]
+description = "New public API surface OR user-observable capability/behavior change"
+diff_indicators = ["pub fn", "pub struct", "pub enum", "export function", "#[arg]"]
+examples = [
+    "Added pub fn process_batch() → feat (new API)",
+    "Migrated HTTP client to async → feat (behavior change)",
+]
+
+[types.fix]
+description = "Fixes incorrect behavior (bugs, crashes, wrong outputs, race conditions)"
+diff_indicators = ["unwrap() → ?", "bounds check", "off-by-one", "error handling"]
+
+[types.refactor]
+description = "Internal restructuring with provably unchanged behavior"
+diff_indicators = ["rename", "extract", "consolidate", "reorganize"]
+examples = ["Renamed internal module structure → refactor (no API change)"]
+hint = "Requires proof: same tests pass, same API. If behavior changes, use feat."
+
+[types.docs]
+description = "Documentation only changes"
+file_patterns = ["*.md", "doc comments"]
+
+[types.test]
+description = "Adding or modifying tests"
+file_patterns = ["*_test.rs", "tests/", "*.test.ts"]
+
+[types.chore]
+description = "Maintenance tasks, dependencies, tooling"
+file_patterns = [".gitignore", "*.lock", "config files"]
+
+[types.style]
+description = "Formatting, whitespace changes (no logic change)"
+diff_indicators = ["whitespace", "formatting"]
+hint = "Variable/function renames are refactor, not style."
+
+[types.perf]
+description = "Performance improvements (proven faster)"
+diff_indicators = ["optimization", "cache", "batch"]
+
+[types.build]
+description = "Build system, dependency changes"
+file_patterns = ["Cargo.toml", "package.json", "Makefile"]
+
+[types.ci]
+description = "CI/CD configuration"
+file_patterns = [".github/workflows/", ".gitlab-ci.yml"]
+
+[types.revert]
+description = "Reverts a previous commit"
+diff_indicators = ["Revert"]
+```
+
+**Type configuration fields** (all optional except `description`):
+- `description` — When to use this type
+- `diff_indicators` — Code patterns that suggest this type
+- `file_patterns` — File patterns that suggest this type
+- `examples` — Example scenarios with rationale
+- `hint` — Classification guidance for this type
+
+**Changelog categories** control how commits are grouped in CHANGELOG.md:
+
+```toml
+# Categories listed in render order (first = appears first in changelog)
+# Matching rules: body_contains is checked before types
+
+[[categories]]
+name = "Breaking"
+header = "Breaking Changes"                      # Display header (defaults to name)
+match.body_contains = ["breaking", "incompatible"]  # Match if body contains these
+
+[[categories]]
+name = "Added"
+match.types = ["feat"]                           # Map commit types to this category
+
+[[categories]]
+name = "Changed"
+default = true                                   # Fallback for unmatched types
+
+[[categories]]
+name = "Deprecated"
+# No match rules - only used if explicitly set
+
+[[categories]]
+name = "Removed"
+match.types = ["revert"]
+
+[[categories]]
+name = "Fixed"
+match.types = ["fix"]
+
+[[categories]]
+name = "Security"
+match.types = ["security"]
+```
+
+**Category matching logic:**
+1. **Body matching first**: If commit body contains any `match.body_contains` pattern (case-insensitive), use that category
+2. **Type matching**: Otherwise, match commit type against `match.types`
+3. **Default fallback**: If no rules match, use the category with `default = true`
+
+**Example: Adding a Performance category**
+```toml
+[[categories]]
+name = "Performance"
+match.types = ["perf"]
+# Insert before "Changed" to render performance improvements prominently
+```
+
+**Example: Custom breaking change detection**
+```toml
+[[categories]]
+name = "Breaking"
+header = "⚠️ Breaking Changes"
+match.body_contains = ["breaking", "incompatible", "BREAKING CHANGE", "migration required"]
 ```
 
 ## License

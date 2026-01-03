@@ -36,6 +36,11 @@ static TERA: LazyLock<Mutex<Tera>> = LazyLock::new(|| {
       {
          eprintln!("Warning: {e}");
       }
+      if let Err(e) =
+         register_directory_templates(&mut tera, &prompts_dir.join("changelog"), "changelog")
+      {
+         eprintln!("Warning: {e}");
+      }
    }
 
    // Register embedded templates that aren't overridden by user-provided files.
@@ -237,6 +242,7 @@ pub fn render_analysis_prompt(
    scope_candidates: &str,
    recent_commits: Option<&str>,
    common_scopes: Option<&str>,
+   types_description: Option<&str>,
 ) -> Result<String> {
    // Try to load template dynamically (supports user-added templates)
    let template_content = load_template_file("analysis", variant)?;
@@ -251,6 +257,9 @@ pub fn render_analysis_prompt(
    }
    if let Some(scopes) = common_scopes {
       context.insert("common_scopes", scopes);
+   }
+   if let Some(types) = types_description {
+      context.insert("types_description", types);
    }
 
    // Render using render_str for dynamic templates
@@ -289,5 +298,34 @@ pub fn render_summary_prompt(
    let mut tera = TERA.lock();
    tera.render_str(&template_content, &context).map_err(|e| {
       CommitGenError::Other(format!("Failed to render summary prompt template '{variant}': {e}"))
+   })
+}
+
+/// Render changelog prompt template
+pub fn render_changelog_prompt(
+   variant: &str,
+   changelog_path: &str,
+   is_package_changelog: bool,
+   stat: &str,
+   diff: &str,
+   existing_entries: Option<&str>,
+) -> Result<String> {
+   // Try to load template dynamically (supports user-added templates)
+   let template_content = load_template_file("changelog", variant)?;
+
+   // Create context with all the data
+   let mut context = Context::new();
+   context.insert("changelog_path", changelog_path);
+   context.insert("is_package_changelog", &is_package_changelog);
+   context.insert("stat", stat);
+   context.insert("diff", diff);
+   if let Some(entries) = existing_entries {
+      context.insert("existing_entries", entries);
+   }
+
+   // Render using render_str for dynamic templates
+   let mut tera = TERA.lock();
+   tera.render_str(&template_content, &context).map_err(|e| {
+      CommitGenError::Other(format!("Failed to render changelog prompt template '{variant}': {e}"))
    })
 }

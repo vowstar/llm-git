@@ -146,6 +146,38 @@ where
    }
 }
 
+/// Format commit types from config into a rich description for the prompt
+/// Order is preserved from config (first = highest priority)
+fn format_types_description(config: &CommitConfig) -> String {
+   let mut out = String::from("Check types in order (first match wins):\n\n");
+
+   for (name, tc) in &config.types {
+      out.push_str(&format!("**{}**: {}\n", name, tc.description));
+      if !tc.diff_indicators.is_empty() {
+         out.push_str(&format!(
+            "  Diff indicators: `{}`\n",
+            tc.diff_indicators.join("`, `")
+         ));
+      }
+      if !tc.file_patterns.is_empty() {
+         out.push_str(&format!("  File patterns: {}\n", tc.file_patterns.join(", ")));
+      }
+      for ex in &tc.examples {
+         out.push_str(&format!("  - {}\n", ex));
+      }
+      if !tc.hint.is_empty() {
+         out.push_str(&format!("  Note: {}\n", tc.hint));
+      }
+      out.push('\n');
+   }
+
+   if !config.classifier_hint.is_empty() {
+      out.push_str(&format!("\n{}\n", config.classifier_hint));
+   }
+
+   out
+}
+
 /// Generate conventional commit analysis using OpenAI-compatible API
 pub fn generate_conventional_analysis<'a>(
    stat: &'a str,
@@ -157,6 +189,9 @@ pub fn generate_conventional_analysis<'a>(
 ) -> Result<ConventionalAnalysis> {
    retry_api_call(config, move || {
       let client = build_client(config);
+
+      // Build type enum from config
+      let type_enum: Vec<&str> = config.types.keys().map(|s| s.as_str()).collect();
 
       // Define the conventional analysis tool
       let tool = Tool {
@@ -171,7 +206,7 @@ pub fn generate_conventional_analysis<'a>(
                properties: serde_json::json!({
                   "type": {
                      "type": "string",
-                     "enum": ["feat", "fix", "refactor", "docs", "test", "chore", "style", "perf", "build", "ci", "revert"],
+                     "enum": type_enum,
                      "description": "Commit type based on change classification"
                   },
                   "scope": {
@@ -210,6 +245,7 @@ pub fn generate_conventional_analysis<'a>(
          messages:    vec![Message {
             role:    "user".to_string(),
             content: {
+               let types_desc = format_types_description(config);
                let mut prompt = templates::render_analysis_prompt(
                   &config.analysis_prompt_variant,
                   stat,
@@ -217,6 +253,7 @@ pub fn generate_conventional_analysis<'a>(
                   scope_candidates_str,
                   ctx.recent_commits,
                   ctx.common_scopes,
+                  Some(&types_desc),
                )?;
 
                if let Some(user_ctx) = ctx.user_context {
@@ -358,7 +395,70 @@ fn validate_summary_quality(
       }
 
       // If no code files and type=feat/fix, warn
-      let code_exts = ["rs", "py", "js", "ts", "go", "java", "c", "cpp"];
+      let code_exts = [
+         // Systems programming
+         "rs", "c", "cpp", "cc", "cxx", "h", "hpp", "hxx", "zig", "nim", "v",
+         // JVM languages
+         "java", "kt", "kts", "scala", "groovy", "clj", "cljs",
+         // .NET languages
+         "cs", "fs", "vb",
+         // Web/scripting
+         "js", "ts", "jsx", "tsx", "mjs", "cjs", "vue", "svelte",
+         // Python ecosystem
+         "py", "pyx", "pxd", "pyi",
+         // Ruby
+         "rb", "rake", "gemspec",
+         // PHP
+         "php",
+         // Go
+         "go",
+         // Swift/Objective-C
+         "swift", "m", "mm",
+         // Lua
+         "lua",
+         // Shell
+         "sh", "bash", "zsh", "fish",
+         // Perl
+         "pl", "pm",
+         // Haskell/ML family
+         "hs", "lhs", "ml", "mli", "fs", "fsi", "elm", "ex", "exs", "erl", "hrl",
+         // Lisp family
+         "lisp", "cl", "el", "scm", "rkt",
+         // Julia
+         "jl",
+         // R
+         "r", "R",
+         // Dart/Flutter
+         "dart",
+         // Crystal
+         "cr",
+         // D
+         "d",
+         // Fortran
+         "f", "f90", "f95", "f03", "f08",
+         // Ada
+         "ada", "adb", "ads",
+         // Cobol
+         "cob", "cbl",
+         // Assembly
+         "asm", "s", "S",
+         // SQL (stored procs)
+         "sql", "plsql",
+         // Prolog
+         "pl", "pro",
+         // OCaml/ReasonML
+         "re", "rei",
+         // Nix
+         "nix",
+         // Terraform/HCL
+         "tf", "hcl",
+         // Solidity
+         "sol",
+         // Move
+         "move",
+         // Cairo
+         "cairo",
+      ];
       let code_count = file_exts
          .iter()
          .filter(|&&e| code_exts.contains(&e))

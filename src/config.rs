@@ -1,8 +1,12 @@
 use std::path::{Path, PathBuf};
 
+use indexmap::IndexMap;
 use serde::Deserialize;
 
-use crate::error::{CommitGenError, Result};
+use crate::{
+   error::{CommitGenError, Result},
+   types::{CategoryConfig, TypeConfig, default_categories, default_classifier_hint, default_types},
+};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
@@ -61,6 +65,22 @@ pub struct CommitConfig {
    #[serde(default = "default_gpg_sign")]
    pub gpg_sign: bool,
 
+   /// Commit types with descriptions for AI prompts (order = priority)
+   #[serde(default = "default_types")]
+   pub types: IndexMap<String, TypeConfig>,
+
+   /// Global hint for cross-type disambiguation
+   #[serde(default = "default_classifier_hint")]
+   pub classifier_hint: String,
+
+   /// Changelog categories with matching rules (order = render order)
+   #[serde(default = "default_categories")]
+   pub categories: Vec<CategoryConfig>,
+
+   /// Enable automatic changelog updates (default: true)
+   #[serde(default = "default_changelog_enabled")]
+   pub changelog_enabled: bool,
+
    /// Loaded analysis prompt (not in config file)
    #[serde(skip)]
    pub analysis_prompt: String,
@@ -88,6 +108,10 @@ const fn default_exclude_old_message() -> bool {
 
 const fn default_gpg_sign() -> bool {
    false
+}
+
+const fn default_changelog_enabled() -> bool {
+   true
 }
 
 impl Default for CommitConfig {
@@ -139,6 +163,10 @@ impl Default for CommitConfig {
          wide_change_abstract:    default_wide_change_abstract(),
          exclude_old_message:     default_exclude_old_message(),
          gpg_sign:                default_gpg_sign(),
+         types:                   default_types(),
+         classifier_hint:         default_classifier_hint(),
+         categories:              default_categories(),
+         changelog_enabled:       default_changelog_enabled(),
          analysis_prompt:         String::new(),
          summary_prompt:          String::new(),
       }
