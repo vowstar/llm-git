@@ -205,7 +205,7 @@ fn generate_for_commit(
    let analysis = generate_conventional_analysis(
       &stat,
       &diff,
-      &config.analysis_model,
+      &config.model,
       &scope_candidates_str,
       &ctx,
       config,

@@ -369,7 +369,7 @@ pub fn analyze_for_compose(
       .replace("{MAX_COMMITS}", &max_commits.to_string());
 
    let request = ApiRequest {
-      model:       config.analysis_model.clone(),
+      model:       config.model.clone(),
       max_tokens:  8000,
       temperature: config.temperature,
       tools:       vec![tool],
@@ -759,7 +759,7 @@ pub fn execute_compose(
          project_context: None, // No project context for compose mode
       };
       let message_analysis =
-         generate_conventional_analysis(&stat, &diff, &config.analysis_model, "", &ctx, config)?;
+         generate_conventional_analysis(&stat, &diff, &config.model, "", &ctx, config)?;
 
       let analysis_body = message_analysis.body_texts();
 

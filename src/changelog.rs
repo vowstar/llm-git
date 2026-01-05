@@ -225,7 +225,7 @@ fn call_changelog_api(prompt: &str, config: &CommitConfig) -> Result<ChangelogRe
       .build()
       .expect("Failed to build HTTP client");
 
-   let model = config.analysis_model.clone();
+   let model = config.model.clone();
 
    let mut attempt = 0;
    loop {

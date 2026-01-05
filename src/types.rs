@@ -931,14 +931,10 @@ pub struct Args {
    #[arg(long, default_value = ".")]
    pub dir: String,
 
-   /// Model for analysis (default: sonnet). Use short names (sonnet/opus/haiku)
-   /// or full names
+   /// Model for generation (default: sonnet). Use short names (sonnet/opus/haiku)
+   /// or full model names.
    #[arg(long, short = 'm')]
    pub model: Option<String>,
-
-   /// Model for summary creation (default: haiku)
-   #[arg(long)]
-   pub summary_model: Option<String>,
 
    /// Temperature for API calls (0.0-1.0, default: 1.0)
    #[arg(long, short = 't')]
@@ -1084,7 +1080,6 @@ impl Default for Args {
          push:                    false,
          dir:                     ".".to_string(),
          model:                   None,
-         summary_model:           None,
          temperature:             None,
          fixes:                   vec![],
          closes:                  vec![],

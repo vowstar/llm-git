@@ -225,10 +225,8 @@ fn add_fixture(
 /// Apply CLI overrides to config
 fn apply_cli_overrides(config: &mut CommitConfig, args: &Args) {
    if let Some(model) = &args.model {
-      config.analysis_model = resolve_model_name(model);
-   }
-   if let Some(summary_model) = &args.summary_model {
-      config.summary_model = resolve_model_name(summary_model);
+      let resolved = resolve_model_name(model);
+      config.model = resolved;
    }
    if let Some(temp) = args.temperature {
       if (0.0..=1.0).contains(&temp) {
@@ -303,15 +301,9 @@ fn run_generation(
    println!(
       "{} {} {} {}",
       style::dim("›"),
-      style::dim("analysis:"),
-      style::model(&config.analysis_model),
+      style::dim("model:"),
+      style::model(&config.model),
       style::dim(&format!("(temp: {})", config.temperature))
-   );
-   println!(
-      "{} {} {}",
-      style::dim("›"),
-      style::dim("summary:"),
-      style::model(&config.summary_model)
    );
 
    // Check if map-reduce should be used for large diffs
@@ -382,7 +374,7 @@ fn run_generation(
       generate_analysis_with_map_reduce(
          &stat,
          &diff,
-         &config.analysis_model,
+         &config.model,
          &scope_candidates_str,
          &ctx,
          config,

@@ -546,7 +546,7 @@ pub fn generate_summary_from_analysis<'a>(
          let max_summary_len = config.summary_guideline.saturating_sub(prefix_len);
 
          let request = ApiRequest {
-            model:       config.summary_model.clone(),
+            model:       config.model.clone(),
             max_tokens:  200,
             temperature: config.temperature,
             tools:       vec![tool],

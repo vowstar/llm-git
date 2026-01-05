@@ -37,8 +37,7 @@ pub struct CommitConfig {
    pub max_diff_tokens:         usize,
    pub wide_change_threshold:   f32,
    pub temperature:             f32,
-   pub analysis_model:          String,
-   pub summary_model:           String,
+   pub model:                   String,
    pub excluded_files:          Vec<String>,
    pub low_priority_extensions: Vec<String>,
 
@@ -149,8 +148,7 @@ impl Default for CommitConfig {
          max_diff_tokens:         25000,  // ~100K chars = 25K tokens (4 chars/token estimate)
          wide_change_threshold:   0.50,
          temperature:             0.2, // Low temperature for consistent structured output
-         analysis_model:          "claude-sonnet-4.5".to_string(),
-         summary_model:           "claude-haiku-4-5".to_string(),
+         model:                   "claude-opus-4.5".to_string(),
          excluded_files:          vec![
             "Cargo.lock".to_string(),
             "package-lock.json".to_string(),

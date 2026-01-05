@@ -125,9 +125,8 @@ Create `~/.config/llm-git/config.toml`:
 api_base_url = "http://localhost:4000"    # Default: LiteLLM proxy
 api_key = "sk-..."                        # Or use LLM_GIT_API_KEY env var
 
-# Models
-analysis_model = "claude-sonnet-4.5"      # For diff analysis
-summary_model = "claude-haiku-4-5"        # For summary generation
+# Model
+model = "claude-sonnet-4-5"               # Default model for all API calls
 
 # Commit message limits
 summary_guideline = 72                    # Target length
@@ -152,15 +151,14 @@ api_key = "sk-ant-..."
 ```toml
 api_base_url = "https://openrouter.ai/api/v1"
 api_key = "sk-or-..."
-analysis_model = "anthropic/claude-sonnet-4.5"
+model = "anthropic/claude-sonnet-4.5"
 ```
 
 **OpenAI:**
 ```toml
 api_base_url = "https://api.openai.com/v1"
 api_key = "sk-..."
-analysis_model = "gpt-4o"
-summary_model = "gpt-4o-mini"
+model = "gpt-4o"
 ```
 
 ### Commit Types
