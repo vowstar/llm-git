@@ -931,8 +931,8 @@ pub struct Args {
    #[arg(long, default_value = ".")]
    pub dir: String,
 
-   /// Model for generation (default: sonnet). Use short names (sonnet/opus/haiku)
-   /// or full model names.
+   /// Model for generation (default: sonnet). Use short names
+   /// (sonnet/opus/haiku) or full model names.
    #[arg(long, short = 'm')]
    pub model: Option<String>,
 
