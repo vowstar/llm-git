@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
    api::retry_api_call,
-   config::CommitConfig,
+   config::{CommitConfig, ResolvedApiMode},
    diff::{FileDiff, parse_diff, reconstruct_diff},
    error::{CommitGenError, Result},
    templates,
@@ -221,91 +221,251 @@ fn map_single_file(
       let tool = build_observation_tool();
 
       let prompt = templates::render_map_prompt("default", filename, file_diff, context_header)?;
+      let mode = config.resolved_api_mode(model_name);
 
-      let request = build_api_request(model_name, config.temperature, vec![tool], &prompt);
+      let response_text = match mode {
+         ResolvedApiMode::ChatCompletions => {
+            let request = build_api_request(model_name, config.temperature, vec![tool], &prompt);
 
-      let mut request_builder = client
-         .post(format!("{}/chat/completions", config.api_base_url))
-         .header("content-type", "application/json");
+            let mut request_builder = client
+               .post(format!("{}/chat/completions", config.api_base_url))
+               .header("content-type", "application/json");
 
-      if let Some(api_key) = &config.api_key {
-         request_builder = request_builder.header("Authorization", format!("Bearer {api_key}"));
+            if let Some(api_key) = &config.api_key {
+               request_builder =
+                  request_builder.header("Authorization", format!("Bearer {api_key}"));
+            }
+
+            let response = request_builder
+               .json(&request)
+               .send()
+               .map_err(CommitGenError::HttpError)?;
+
+            let status = response.status();
+            let response_text = response.text().map_err(CommitGenError::HttpError)?;
+
+            if status.is_server_error() {
+               eprintln!(
+                  "{}",
+                  crate::style::error(&format!("Server error {status}: {response_text}"))
+               );
+               return Ok((true, None)); // Retry
+            }
+
+            if !status.is_success() {
+               return Err(CommitGenError::ApiError {
+                  status: status.as_u16(),
+                  body:   response_text,
+               });
+            }
+
+            response_text
+         },
+         ResolvedApiMode::AnthropicMessages => {
+            let request = AnthropicRequest {
+               model:       model_name.to_string(),
+               max_tokens:  600,
+               temperature: config.temperature,
+               tools:       vec![AnthropicTool {
+                  name:         "create_file_observation".to_string(),
+                  description:  "Extract observations from a single file's changes".to_string(),
+                  input_schema: serde_json::json!({
+                     "type": "object",
+                     "properties": {
+                        "observations": {
+                           "type": "array",
+                           "description": "List of factual observations about what changed in this file",
+                           "items": {"type": "string"}
+                        }
+                     },
+                     "required": ["observations"]
+                  }),
+               }],
+               tool_choice: Some(AnthropicToolChoice {
+                  choice_type: "tool".to_string(),
+                  name:        "create_file_observation".to_string(),
+               }),
+               messages:    vec![AnthropicMessage {
+                  role:    "user".to_string(),
+                  content: vec![AnthropicContent {
+                     content_type: "text".to_string(),
+                     text:         prompt,
+                  }],
+               }],
+            };
+
+            let mut request_builder = client
+               .post(anthropic_messages_url(&config.api_base_url))
+               .header("content-type", "application/json")
+               .header("anthropic-version", "2023-06-01");
+
+            if let Some(api_key) = &config.api_key {
+               request_builder = request_builder.header("x-api-key", api_key);
+            }
+
+            let response = request_builder
+               .json(&request)
+               .send()
+               .map_err(CommitGenError::HttpError)?;
+
+            let status = response.status();
+            let response_text = response.text().map_err(CommitGenError::HttpError)?;
+
+            if status.is_server_error() {
+               eprintln!(
+                  "{}",
+                  crate::style::error(&format!("Server error {status}: {response_text}"))
+               );
+               return Ok((true, None)); // Retry
+            }
+
+            if !status.is_success() {
+               return Err(CommitGenError::ApiError {
+                  status: status.as_u16(),
+                  body:   response_text,
+               });
+            }
+
+            response_text
+         },
+      };
+
+      if response_text.trim().is_empty() {
+         crate::style::warn("Model returned empty response body for observation; retrying.");
+         return Ok((true, None));
       }
 
-      let response = request_builder
-         .json(&request)
-         .send()
-         .map_err(CommitGenError::HttpError)?;
+      match mode {
+         ResolvedApiMode::ChatCompletions => {
+            let api_response: ApiResponse = serde_json::from_str(&response_text).map_err(|e| {
+               CommitGenError::Other(format!(
+                  "Failed to parse observation response JSON: {e}. Response body: {}",
+                  response_snippet(&response_text, 500)
+               ))
+            })?;
 
-      let status = response.status();
-
-      if status.is_server_error() {
-         let error_text = response
-            .text()
-            .unwrap_or_else(|_| "Unknown error".to_string());
-         eprintln!("{}", crate::style::error(&format!("Server error {status}: {error_text}")));
-         return Ok((true, None)); // Retry
-      }
-
-      if !status.is_success() {
-         let error_text = response
-            .text()
-            .unwrap_or_else(|_| "Unknown error".to_string());
-         return Err(CommitGenError::ApiError { status: status.as_u16(), body: error_text });
-      }
-
-      let api_response: ApiResponse = response.json().map_err(CommitGenError::HttpError)?;
-
-      if api_response.choices.is_empty() {
-         return Err(CommitGenError::Other(
-            "API returned empty response for file observation".to_string(),
-         ));
-      }
-
-      let message = &api_response.choices[0].message;
-
-      if !message.tool_calls.is_empty() {
-         let tool_call = &message.tool_calls[0];
-         if tool_call.function.name == "create_file_observation" {
-            let args = &tool_call.function.arguments;
-            if args.is_empty() {
+            if api_response.choices.is_empty() {
                return Err(CommitGenError::Other(
-                  "Model returned empty function arguments for observation".to_string(),
+                  "API returned empty response for file observation".to_string(),
                ));
             }
 
-            let obs: FileObservationResponse = serde_json::from_str(args).map_err(|e| {
-               CommitGenError::Other(format!("Failed to parse observation response: {e}"))
-            })?;
+            let message = &api_response.choices[0].message;
 
-            return Ok((
+            if !message.tool_calls.is_empty() {
+               let tool_call = &message.tool_calls[0];
+               if tool_call.function.name == "create_file_observation" {
+                  let args = &tool_call.function.arguments;
+                  if args.is_empty() {
+                     return Err(CommitGenError::Other(
+                        "Model returned empty function arguments for observation".to_string(),
+                     ));
+                  }
+
+                  let obs: FileObservationResponse = serde_json::from_str(args).map_err(|e| {
+                     CommitGenError::Other(format!("Failed to parse observation response: {e}"))
+                  })?;
+
+                  return Ok((
+                     false,
+                     Some(FileObservation {
+                        file:         filename.to_string(),
+                        observations: obs.observations,
+                        additions:    0, // Will be filled from FileDiff
+                        deletions:    0,
+                     }),
+                  ));
+               }
+            }
+
+            // Fallback: try to parse content
+            if let Some(content) = &message.content {
+               if content.trim().is_empty() {
+                  crate::style::warn("Model returned empty content for observation; retrying.");
+                  return Ok((true, None));
+               }
+               let obs: FileObservationResponse =
+                  serde_json::from_str(content.trim()).map_err(|e| {
+                     CommitGenError::Other(format!(
+                        "Failed to parse observation content JSON: {e}. Content: {}",
+                        response_snippet(content, 500)
+                     ))
+                  })?;
+               return Ok((
+                  false,
+                  Some(FileObservation {
+                     file:         filename.to_string(),
+                     observations: obs.observations,
+                     additions:    0,
+                     deletions:    0,
+                  }),
+               ));
+            }
+
+            Err(CommitGenError::Other("No observation found in API response".to_string()))
+         },
+         ResolvedApiMode::AnthropicMessages => {
+            let (tool_input, text_content, stop_reason) =
+               extract_anthropic_content(&response_text, "create_file_observation")?;
+
+            if let Some(input) = tool_input {
+               let observations = input
+                  .get("observations")
+                  .and_then(|v| v.as_array())
+                  .map(|arr| {
+                     arr.iter()
+                        .filter_map(|v| v.as_str().map(str::to_string))
+                        .collect::<Vec<_>>()
+                  })
+                  .unwrap_or_default();
+
+               if observations.is_empty() {
+                  if stop_reason.as_deref() == Some("max_tokens") {
+                     crate::style::warn(
+                        "Anthropic stopped at max_tokens with empty observations; retrying.",
+                     );
+                     return Ok((true, None));
+                  }
+
+                  crate::style::warn(
+                     "Model returned empty observation tool input; continuing with no observations.",
+                  );
+               }
+
+               return Ok((
+                  false,
+                  Some(FileObservation {
+                     file:         filename.to_string(),
+                     observations,
+                     additions:    0,
+                     deletions:    0,
+                  }),
+               ));
+            }
+
+            if text_content.trim().is_empty() {
+               crate::style::warn("Model returned empty content for observation; retrying.");
+               return Ok((true, None));
+            }
+
+            let obs: FileObservationResponse =
+               serde_json::from_str(text_content.trim()).map_err(|e| {
+                  CommitGenError::Other(format!(
+                     "Failed to parse observation content JSON: {e}. Content: {}",
+                     response_snippet(&text_content, 500)
+                  ))
+               })?;
+            Ok((
                false,
                Some(FileObservation {
                   file:         filename.to_string(),
                   observations: obs.observations,
-                  additions:    0, // Will be filled from FileDiff
+                  additions:    0,
                   deletions:    0,
                }),
-            ));
-         }
+            ))
+         },
       }
-
-      // Fallback: try to parse content
-      if let Some(content) = &message.content {
-         let obs: FileObservationResponse =
-            serde_json::from_str(content.trim()).map_err(CommitGenError::JsonError)?;
-         return Ok((
-            false,
-            Some(FileObservation {
-               file:         filename.to_string(),
-               observations: obs.observations,
-               additions:    0,
-               deletions:    0,
-            }),
-         ));
-      }
-
-      Err(CommitGenError::Other("No observation found in API response".to_string()))
    })
 }
 
@@ -336,75 +496,240 @@ pub fn reduce_phase(
          scope_candidates,
          Some(&types_description),
       )?;
+      let mode = config.resolved_api_mode(model_name);
 
-      let request = build_api_request(model_name, config.temperature, vec![tool], &prompt);
+      let response_text = match mode {
+         ResolvedApiMode::ChatCompletions => {
+            let request = build_api_request(model_name, config.temperature, vec![tool], &prompt);
 
-      let mut request_builder = client
-         .post(format!("{}/chat/completions", config.api_base_url))
-         .header("content-type", "application/json");
+            let mut request_builder = client
+               .post(format!("{}/chat/completions", config.api_base_url))
+               .header("content-type", "application/json");
 
-      if let Some(api_key) = &config.api_key {
-         request_builder = request_builder.header("Authorization", format!("Bearer {api_key}"));
+            if let Some(api_key) = &config.api_key {
+               request_builder =
+                  request_builder.header("Authorization", format!("Bearer {api_key}"));
+            }
+
+            let response = request_builder
+               .json(&request)
+               .send()
+               .map_err(CommitGenError::HttpError)?;
+
+            let status = response.status();
+            let response_text = response.text().map_err(CommitGenError::HttpError)?;
+
+            if status.is_server_error() {
+               eprintln!(
+                  "{}",
+                  crate::style::error(&format!("Server error {status}: {response_text}"))
+               );
+               return Ok((true, None)); // Retry
+            }
+
+            if !status.is_success() {
+               return Err(CommitGenError::ApiError {
+                  status: status.as_u16(),
+                  body:   response_text,
+               });
+            }
+
+            response_text
+         },
+         ResolvedApiMode::AnthropicMessages => {
+            let request = AnthropicRequest {
+               model:       model_name.to_string(),
+               max_tokens:  1000,
+               temperature: config.temperature,
+               tools:       vec![AnthropicTool {
+                  name:         "create_conventional_analysis".to_string(),
+                  description:  "Analyze changes and classify as conventional commit with type, scope, details, and metadata".to_string(),
+                  input_schema: serde_json::json!({
+                     "type": "object",
+                     "properties": {
+                        "type": {
+                           "type": "string",
+                           "enum": type_enum,
+                           "description": "Commit type based on change classification"
+                        },
+                        "scope": {
+                           "type": "string",
+                           "description": "Optional scope (module/component). Omit if unclear or multi-component."
+                        },
+                        "details": {
+                           "type": "array",
+                           "description": "Array of 0-6 detail items with changelog metadata.",
+                           "items": {
+                              "type": "object",
+                              "properties": {
+                                 "text": {
+                                    "type": "string",
+                                    "description": "Detail about change, starting with past-tense verb, ending with period"
+                                 },
+                                 "changelog_category": {
+                                    "type": "string",
+                                    "enum": ["Added", "Changed", "Fixed", "Deprecated", "Removed", "Security"],
+                                    "description": "Changelog category if user-visible. Omit for internal changes."
+                                 },
+                                 "user_visible": {
+                                    "type": "boolean",
+                                    "description": "True if this change affects users/API and should appear in changelog"
+                                 }
+                              },
+                              "required": ["text", "user_visible"]
+                           }
+                        },
+                        "issue_refs": {
+                           "type": "array",
+                           "description": "Issue numbers from context (e.g., ['#123', '#456']). Empty if none.",
+                           "items": {
+                              "type": "string"
+                           }
+                        }
+                     },
+                     "required": ["type", "details", "issue_refs"]
+                  }),
+               }],
+               tool_choice: Some(AnthropicToolChoice {
+                  choice_type: "tool".to_string(),
+                  name:        "create_conventional_analysis".to_string(),
+               }),
+               messages:    vec![AnthropicMessage {
+                  role:    "user".to_string(),
+                  content: vec![AnthropicContent {
+                     content_type: "text".to_string(),
+                     text:         prompt,
+                  }],
+               }],
+            };
+
+            let mut request_builder = client
+               .post(anthropic_messages_url(&config.api_base_url))
+               .header("content-type", "application/json")
+               .header("anthropic-version", "2023-06-01");
+
+            if let Some(api_key) = &config.api_key {
+               request_builder = request_builder.header("x-api-key", api_key);
+            }
+
+            let response = request_builder
+               .json(&request)
+               .send()
+               .map_err(CommitGenError::HttpError)?;
+
+            let status = response.status();
+            let response_text = response.text().map_err(CommitGenError::HttpError)?;
+
+            if status.is_server_error() {
+               eprintln!(
+                  "{}",
+                  crate::style::error(&format!("Server error {status}: {response_text}"))
+               );
+               return Ok((true, None));
+            }
+
+            if !status.is_success() {
+               return Err(CommitGenError::ApiError {
+                  status: status.as_u16(),
+                  body:   response_text,
+               });
+            }
+
+            response_text
+         },
+      };
+
+      if response_text.trim().is_empty() {
+         crate::style::warn("Model returned empty response body for synthesis; retrying.");
+         return Ok((true, None));
       }
 
-      let response = request_builder
-         .json(&request)
-         .send()
-         .map_err(CommitGenError::HttpError)?;
+      match mode {
+         ResolvedApiMode::ChatCompletions => {
+            let api_response: ApiResponse = serde_json::from_str(&response_text).map_err(|e| {
+               CommitGenError::Other(format!(
+                  "Failed to parse synthesis response JSON: {e}. Response body: {}",
+                  response_snippet(&response_text, 500)
+               ))
+            })?;
 
-      let status = response.status();
-
-      if status.is_server_error() {
-         let error_text = response
-            .text()
-            .unwrap_or_else(|_| "Unknown error".to_string());
-         eprintln!("{}", crate::style::error(&format!("Server error {status}: {error_text}")));
-         return Ok((true, None)); // Retry
-      }
-
-      if !status.is_success() {
-         let error_text = response
-            .text()
-            .unwrap_or_else(|_| "Unknown error".to_string());
-         return Err(CommitGenError::ApiError { status: status.as_u16(), body: error_text });
-      }
-
-      let api_response: ApiResponse = response.json().map_err(CommitGenError::HttpError)?;
-
-      if api_response.choices.is_empty() {
-         return Err(CommitGenError::Other(
-            "API returned empty response for synthesis".to_string(),
-         ));
-      }
-
-      let message = &api_response.choices[0].message;
-
-      if !message.tool_calls.is_empty() {
-         let tool_call = &message.tool_calls[0];
-         if tool_call.function.name == "create_conventional_analysis" {
-            let args = &tool_call.function.arguments;
-            if args.is_empty() {
+            if api_response.choices.is_empty() {
                return Err(CommitGenError::Other(
-                  "Model returned empty function arguments for synthesis".to_string(),
+                  "API returned empty response for synthesis".to_string(),
                ));
             }
 
-            let analysis: ConventionalAnalysis = serde_json::from_str(args).map_err(|e| {
-               CommitGenError::Other(format!("Failed to parse synthesis response: {e}"))
-            })?;
+            let message = &api_response.choices[0].message;
 
-            return Ok((false, Some(analysis)));
-         }
+            if !message.tool_calls.is_empty() {
+               let tool_call = &message.tool_calls[0];
+               if tool_call.function.name == "create_conventional_analysis" {
+                  let args = &tool_call.function.arguments;
+                  if args.is_empty() {
+                     return Err(CommitGenError::Other(
+                        "Model returned empty function arguments for synthesis".to_string(),
+                     ));
+                  }
+
+                  let analysis: ConventionalAnalysis = serde_json::from_str(args).map_err(|e| {
+                     CommitGenError::Other(format!("Failed to parse synthesis response: {e}"))
+                  })?;
+
+                  return Ok((false, Some(analysis)));
+               }
+            }
+
+            // Fallback
+            if let Some(content) = &message.content {
+               if content.trim().is_empty() {
+                  crate::style::warn("Model returned empty content for synthesis; retrying.");
+                  return Ok((true, None));
+               }
+               let analysis: ConventionalAnalysis =
+                  serde_json::from_str(content.trim()).map_err(|e| {
+                     CommitGenError::Other(format!(
+                        "Failed to parse synthesis content JSON: {e}. Content: {}",
+                        response_snippet(content, 500)
+                     ))
+                  })?;
+               return Ok((false, Some(analysis)));
+            }
+
+            Err(CommitGenError::Other("No analysis found in synthesis response".to_string()))
+         },
+         ResolvedApiMode::AnthropicMessages => {
+            let (tool_input, text_content, stop_reason) =
+               extract_anthropic_content(&response_text, "create_conventional_analysis")?;
+
+            if let Some(input) = tool_input {
+               let analysis: ConventionalAnalysis = serde_json::from_value(input).map_err(|e| {
+                  CommitGenError::Other(format!(
+                     "Failed to parse synthesis tool input: {e}. Response body: {}",
+                     response_snippet(&response_text, 500)
+                  ))
+               })?;
+               return Ok((false, Some(analysis)));
+            }
+
+            if text_content.trim().is_empty() {
+               if stop_reason.as_deref() == Some("max_tokens") {
+                  crate::style::warn("Anthropic stopped at max_tokens with empty synthesis; retrying.");
+                  return Ok((true, None));
+               }
+               crate::style::warn("Model returned empty content for synthesis; retrying.");
+               return Ok((true, None));
+            }
+
+            let analysis: ConventionalAnalysis =
+               serde_json::from_str(text_content.trim()).map_err(|e| {
+                  CommitGenError::Other(format!(
+                     "Failed to parse synthesis content JSON: {e}. Content: {}",
+                     response_snippet(&text_content, 500)
+                  ))
+               })?;
+            Ok((false, Some(analysis)))
+         },
       }
-
-      // Fallback
-      if let Some(content) = &message.content {
-         let analysis: ConventionalAnalysis =
-            serde_json::from_str(content.trim()).map_err(CommitGenError::JsonError)?;
-         return Ok((false, Some(analysis)));
-      }
-
-      Err(CommitGenError::Other("No analysis found in synthesis response".to_string()))
    })
 }
 
@@ -457,6 +782,71 @@ fn build_client(config: &CommitConfig) -> reqwest::blocking::Client {
       .expect("Failed to build HTTP client")
 }
 
+fn response_snippet(body: &str, limit: usize) -> String {
+   if body.is_empty() {
+      return "<empty response body>".to_string();
+   }
+   let mut snippet = body.trim().to_string();
+   if snippet.len() > limit {
+      snippet.truncate(limit);
+      snippet.push_str("...");
+   }
+   snippet
+}
+
+fn anthropic_messages_url(base_url: &str) -> String {
+   let trimmed = base_url.trim_end_matches('/');
+   if trimmed.ends_with("/v1") {
+      format!("{trimmed}/messages")
+   } else {
+      format!("{trimmed}/v1/messages")
+   }
+}
+
+fn extract_anthropic_content(
+   response_text: &str,
+   tool_name: &str,
+) -> Result<(Option<serde_json::Value>, String, Option<String>)> {
+   let value: serde_json::Value = serde_json::from_str(response_text).map_err(|e| {
+      CommitGenError::Other(format!(
+         "Failed to parse Anthropic response JSON: {e}. Response body: {}",
+         response_snippet(response_text, 500)
+      ))
+   })?;
+
+   let stop_reason = value
+      .get("stop_reason")
+      .and_then(|v| v.as_str())
+      .map(str::to_string);
+
+   let mut tool_input: Option<serde_json::Value> = None;
+   let mut text_parts = Vec::new();
+
+   if let Some(content) = value.get("content").and_then(|v| v.as_array()) {
+      for item in content {
+         let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
+         match item_type {
+            "tool_use" => {
+               let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("");
+               if name == tool_name
+                  && let Some(input) = item.get("input")
+               {
+                  tool_input = Some(input.clone());
+               }
+            },
+            "text" => {
+               if let Some(text) = item.get("text").and_then(|v| v.as_str()) {
+                  text_parts.push(text.to_string());
+               }
+            },
+            _ => {},
+         }
+      }
+   }
+
+   Ok((tool_input, text_parts.join("\n"), stop_reason))
+}
+
 #[derive(Debug, Serialize)]
 struct Message {
    role:    String,
@@ -494,6 +884,44 @@ struct ApiRequest {
    #[serde(skip_serializing_if = "Option::is_none")]
    tool_choice: Option<serde_json::Value>,
    messages:    Vec<Message>,
+}
+
+#[derive(Debug, Serialize)]
+struct AnthropicRequest {
+   model:       String,
+   max_tokens:  u32,
+   temperature: f32,
+   tools:       Vec<AnthropicTool>,
+   #[serde(skip_serializing_if = "Option::is_none")]
+   tool_choice: Option<AnthropicToolChoice>,
+   messages:    Vec<AnthropicMessage>,
+}
+
+#[derive(Debug, Serialize)]
+struct AnthropicTool {
+   name:         String,
+   description:  String,
+   input_schema: serde_json::Value,
+}
+
+#[derive(Debug, Serialize)]
+struct AnthropicToolChoice {
+   #[serde(rename = "type")]
+   choice_type: String,
+   name:        String,
+}
+
+#[derive(Debug, Serialize)]
+struct AnthropicMessage {
+   role:    String,
+   content: Vec<AnthropicContent>,
+}
+
+#[derive(Debug, Serialize)]
+struct AnthropicContent {
+   #[serde(rename = "type")]
+   content_type: String,
+   text:         String,
 }
 
 #[derive(Debug, Deserialize)]

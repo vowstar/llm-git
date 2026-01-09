@@ -369,6 +369,8 @@ fn run_generation(
       recent_commits:  recent_commits_str.as_deref(),
       common_scopes:   common_scopes_str.as_deref(),
       project_context: project_context_str.as_deref(),
+      debug_output:    args.debug_output.as_deref(),
+      debug_prefix:    None,
    };
    let analysis = style::with_spinner("Generating conventional commit analysis", || {
       generate_analysis_with_map_reduce(
@@ -404,6 +406,8 @@ fn run_generation(
          &detail_points,
          context.as_deref(),
          config,
+         args.debug_output.as_deref(),
+         None,
       )
    })
    .unwrap_or_else(|err| {
@@ -465,6 +469,8 @@ fn validate_and_process(
                detail_points,
                user_context,
                config,
+               None,
+               None,
             ) {
                Ok(new_summary) => {
                   commit_msg.summary = new_summary;

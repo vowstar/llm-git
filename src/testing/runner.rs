@@ -99,6 +99,8 @@ impl TestRunner {
          recent_commits:  fixture.input.context.recent_commits.as_deref(),
          common_scopes:   fixture.input.context.common_scopes.as_deref(),
          project_context: fixture.input.context.project_context.as_deref(),
+         debug_output:    None,
+         debug_prefix:    None,
       };
 
       // Run analysis
@@ -121,6 +123,8 @@ impl TestRunner {
          &detail_points,
          fixture.input.context.user_context.as_deref(),
          &self.config,
+         None,
+         None,
       )
       .unwrap_or_else(|_| {
          crate::api::fallback_summary(

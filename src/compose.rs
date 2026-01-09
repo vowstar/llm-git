@@ -752,11 +752,14 @@ pub fn execute_compose(
 
       // Generate commit message using existing infrastructure
       println!("  {}", style::info("Generating commit message..."));
+      let debug_prefix = format!("compose-{}", idx + 1);
       let ctx = AnalysisContext {
          user_context:    Some(&group.rationale),
          recent_commits:  None, // No recent commits for compose mode
          common_scopes:   None, // No common scopes for compose mode
          project_context: None, // No project context for compose mode
+         debug_output:    args.debug_output.as_deref(),
+         debug_prefix:    Some(&debug_prefix),
       };
       let message_analysis =
          generate_conventional_analysis(&stat, &diff, &config.model, "", &ctx, config)?;
@@ -770,6 +773,8 @@ pub fn execute_compose(
          &analysis_body,
          Some(&group.rationale),
          config,
+         args.debug_output.as_deref(),
+         Some(&debug_prefix),
       )?;
 
       let final_commit_type = if dependency_only {

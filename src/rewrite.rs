@@ -201,6 +201,8 @@ fn generate_for_commit(
       recent_commits:  None, // No recent commits for rewrite mode
       common_scopes:   None, // No common scopes for rewrite mode
       project_context: None, // No project context for rewrite mode
+      debug_output:    None,
+      debug_prefix:    None,
    };
    let analysis = generate_conventional_analysis(
       &stat,
@@ -220,6 +222,8 @@ fn generate_for_commit(
       &body_texts,
       None, // No user context in rewrite mode
       config,
+      None,
+      None,
    )?;
 
    // Build ConventionalCommit

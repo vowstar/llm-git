@@ -1,9 +1,9 @@
-use std::{thread, time::Duration};
+use std::{path::Path, thread, time::Duration};
 
 use serde::{Deserialize, Serialize};
 
 use crate::{
-   config::CommitConfig,
+   config::{CommitConfig, ResolvedApiMode},
    error::{CommitGenError, Result},
    templates,
    tokens::TokenCounter,
@@ -23,6 +23,10 @@ pub struct AnalysisContext<'a> {
    pub common_scopes:   Option<&'a str>,
    /// Project context (language, framework) for terminology
    pub project_context: Option<&'a str>,
+   /// Debug output directory for saving raw I/O
+   pub debug_output:    Option<&'a Path>,
+   /// Prefix for debug output files to avoid collisions
+   pub debug_prefix:    Option<&'a str>,
 }
 
 /// Build HTTP client with timeouts from config
@@ -32,6 +36,84 @@ fn build_client(config: &CommitConfig) -> reqwest::blocking::Client {
       .connect_timeout(Duration::from_secs(config.connect_timeout_secs))
       .build()
       .expect("Failed to build HTTP client")
+}
+
+fn debug_filename(prefix: Option<&str>, name: &str) -> String {
+   match prefix {
+      Some(p) if !p.is_empty() => format!("{p}_{name}"),
+      _ => name.to_string(),
+   }
+}
+
+fn response_snippet(body: &str, limit: usize) -> String {
+   if body.is_empty() {
+      return "<empty response body>".to_string();
+   }
+   let mut snippet = body.trim().to_string();
+   if snippet.len() > limit {
+      snippet.truncate(limit);
+      snippet.push_str("...");
+   }
+   snippet
+}
+
+fn save_debug_output(debug_dir: Option<&Path>, filename: &str, content: &str) -> Result<()> {
+   let Some(dir) = debug_dir else {
+      return Ok(());
+   };
+
+   std::fs::create_dir_all(dir)?;
+   let path = dir.join(filename);
+   std::fs::write(&path, content)?;
+   Ok(())
+}
+
+fn anthropic_messages_url(base_url: &str) -> String {
+   let trimmed = base_url.trim_end_matches('/');
+   if trimmed.ends_with("/v1") {
+      format!("{trimmed}/messages")
+   } else {
+      format!("{trimmed}/v1/messages")
+   }
+}
+
+fn extract_anthropic_content(
+   response_text: &str,
+   tool_name: &str,
+) -> Result<(Option<serde_json::Value>, String)> {
+   let value: serde_json::Value = serde_json::from_str(response_text).map_err(|e| {
+      CommitGenError::Other(format!(
+         "Failed to parse Anthropic response JSON: {e}. Response body: {}",
+         response_snippet(response_text, 500)
+      ))
+   })?;
+
+   let mut tool_input: Option<serde_json::Value> = None;
+   let mut text_parts = Vec::new();
+
+   if let Some(content) = value.get("content").and_then(|v| v.as_array()) {
+      for item in content {
+         let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
+         match item_type {
+            "tool_use" => {
+               let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("");
+               if name == tool_name
+                  && let Some(input) = item.get("input")
+               {
+                  tool_input = Some(input.clone());
+               }
+            },
+            "text" => {
+               if let Some(text) = item.get("text").and_then(|v| v.as_str()) {
+                  text_parts.push(text.to_string());
+               }
+            },
+            _ => {},
+         }
+      }
+   }
+
+   Ok((tool_input, text_parts.join("\n")))
 }
 
 #[derive(Debug, Serialize)]
@@ -71,6 +153,44 @@ struct ApiRequest {
    #[serde(skip_serializing_if = "Option::is_none")]
    tool_choice: Option<serde_json::Value>,
    messages:    Vec<Message>,
+}
+
+#[derive(Debug, Serialize)]
+struct AnthropicRequest {
+   model:       String,
+   max_tokens:  u32,
+   temperature: f32,
+   tools:       Vec<AnthropicTool>,
+   #[serde(skip_serializing_if = "Option::is_none")]
+   tool_choice: Option<AnthropicToolChoice>,
+   messages:    Vec<AnthropicMessage>,
+}
+
+#[derive(Debug, Serialize)]
+struct AnthropicTool {
+   name:         String,
+   description:  String,
+   input_schema: serde_json::Value,
+}
+
+#[derive(Debug, Serialize)]
+struct AnthropicToolChoice {
+   #[serde(rename = "type")]
+   choice_type: String,
+   name:        String,
+}
+
+#[derive(Debug, Serialize)]
+struct AnthropicMessage {
+   role:    String,
+   content: Vec<AnthropicContent>,
+}
+
+#[derive(Debug, Serialize)]
+struct AnthropicContent {
+   #[serde(rename = "type")]
+   content_type: String,
+   text:         String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -263,115 +383,332 @@ pub fn generate_conventional_analysis<'a>(
          },
       };
 
-      let request = ApiRequest {
-         model:       model_name.to_string(),
-         max_tokens:  1000,
-         temperature: config.temperature,
-         tools:       vec![tool],
-         tool_choice: Some(
-            serde_json::json!({ "type": "function", "function": { "name": "create_conventional_analysis" } }),
-         ),
-         messages:    vec![Message {
-            role:    "user".to_string(),
-            content: {
-               let types_desc = format_types_description(config);
-               let mut prompt = templates::render_analysis_prompt(&templates::AnalysisParams {
-                  variant: &config.analysis_prompt_variant,
-                  stat,
-                  diff,
-                  scope_candidates: scope_candidates_str,
-                  recent_commits: ctx.recent_commits,
-                  common_scopes: ctx.common_scopes,
-                  types_description: Some(&types_desc),
-                  project_context: ctx.project_context,
-               })?;
+      let debug_dir = ctx.debug_output;
+      let debug_prefix = ctx.debug_prefix;
+      let mode = config.resolved_api_mode(model_name);
 
-               if let Some(user_ctx) = ctx.user_context {
-                  prompt = format!("ADDITIONAL CONTEXT FROM USER:\n{user_ctx}\n\n{prompt}");
-               }
+      let response_text = match mode {
+         ResolvedApiMode::ChatCompletions => {
+            let request = ApiRequest {
+               model:       model_name.to_string(),
+               max_tokens:  1000,
+               temperature: config.temperature,
+               tools:       vec![tool],
+               tool_choice: Some(
+                  serde_json::json!({ "type": "function", "function": { "name": "create_conventional_analysis" } }),
+               ),
+               messages:    vec![Message {
+                  role:    "user".to_string(),
+                  content: {
+                     let types_desc = format_types_description(config);
+                     let mut prompt = templates::render_analysis_prompt(&templates::AnalysisParams {
+                        variant: &config.analysis_prompt_variant,
+                        stat,
+                        diff,
+                        scope_candidates: scope_candidates_str,
+                        recent_commits: ctx.recent_commits,
+                        common_scopes: ctx.common_scopes,
+                        types_description: Some(&types_desc),
+                        project_context: ctx.project_context,
+                     })?;
 
-               prompt
-            },
-         }],
+                     if let Some(user_ctx) = ctx.user_context {
+                        prompt = format!("ADDITIONAL CONTEXT FROM USER:\n{user_ctx}\n\n{prompt}");
+                     }
+
+                     prompt
+                  },
+               }],
+            };
+
+            if debug_dir.is_some() {
+               let request_json = serde_json::to_string_pretty(&request)?;
+               save_debug_output(
+                  debug_dir,
+                  &debug_filename(debug_prefix, "analysis_request.json"),
+                  &request_json,
+               )?;
+            }
+
+            let mut request_builder = client
+               .post(format!("{}/chat/completions", config.api_base_url))
+               .header("content-type", "application/json");
+
+            // Add Authorization header if API key is configured
+            if let Some(api_key) = &config.api_key {
+               request_builder =
+                  request_builder.header("Authorization", format!("Bearer {api_key}"));
+            }
+
+            let response = request_builder
+               .json(&request)
+               .send()
+               .map_err(CommitGenError::HttpError)?;
+
+            let status = response.status();
+            let response_text = response.text().map_err(CommitGenError::HttpError)?;
+            if debug_dir.is_some() {
+               save_debug_output(
+                  debug_dir,
+                  &debug_filename(debug_prefix, "analysis_response.json"),
+                  &response_text,
+               )?;
+            }
+
+            // Retry on 5xx errors
+            if status.is_server_error() {
+               eprintln!(
+                  "{}",
+                  crate::style::error(&format!("Server error {status}: {response_text}"))
+               );
+               return Ok((true, None)); // Retry
+            }
+
+            if !status.is_success() {
+               return Err(CommitGenError::ApiError {
+                  status: status.as_u16(),
+                  body:   response_text,
+               });
+            }
+
+            response_text
+         },
+         ResolvedApiMode::AnthropicMessages => {
+            let request = AnthropicRequest {
+               model:       model_name.to_string(),
+               max_tokens:  1000,
+               temperature: config.temperature,
+               tools:       vec![AnthropicTool {
+                  name:         "create_conventional_analysis".to_string(),
+                  description:  "Analyze changes and classify as conventional commit with type, scope, details, and metadata".to_string(),
+                  input_schema: serde_json::json!({
+                     "type": "object",
+                     "properties": {
+                        "type": {
+                           "type": "string",
+                           "enum": type_enum,
+                           "description": "Commit type based on change classification"
+                        },
+                        "scope": {
+                           "type": "string",
+                           "description": "Optional scope (module/component). Omit if unclear or multi-component."
+                        },
+                        "details": {
+                           "type": "array",
+                           "description": "Array of 0-6 detail items with changelog metadata.",
+                           "items": {
+                              "type": "object",
+                              "properties": {
+                                 "text": {
+                                    "type": "string",
+                                    "description": "Detail about change, starting with past-tense verb, ending with period"
+                                 },
+                                 "changelog_category": {
+                                    "type": "string",
+                                    "enum": ["Added", "Changed", "Fixed", "Deprecated", "Removed", "Security"],
+                                    "description": "Changelog category if user-visible. Omit for internal changes."
+                                 },
+                                 "user_visible": {
+                                    "type": "boolean",
+                                    "description": "True if this change affects users/API and should appear in changelog"
+                                 }
+                              },
+                              "required": ["text", "user_visible"]
+                           }
+                        },
+                        "issue_refs": {
+                           "type": "array",
+                           "description": "Issue numbers from context (e.g., ['#123', '#456']). Empty if none.",
+                           "items": {
+                              "type": "string"
+                           }
+                        }
+                     },
+                     "required": ["type", "details", "issue_refs"]
+                  }),
+               }],
+               tool_choice: Some(AnthropicToolChoice {
+                  choice_type: "tool".to_string(),
+                  name:        "create_conventional_analysis".to_string(),
+               }),
+               messages:    vec![AnthropicMessage {
+                  role:    "user".to_string(),
+                  content: vec![AnthropicContent {
+                     content_type: "text".to_string(),
+                     text: {
+                        let types_desc = format_types_description(config);
+                        let mut prompt = templates::render_analysis_prompt(
+                           &templates::AnalysisParams {
+                              variant: &config.analysis_prompt_variant,
+                              stat,
+                              diff,
+                              scope_candidates: scope_candidates_str,
+                              recent_commits: ctx.recent_commits,
+                              common_scopes: ctx.common_scopes,
+                              types_description: Some(&types_desc),
+                              project_context: ctx.project_context,
+                           },
+                        )?;
+
+                        if let Some(user_ctx) = ctx.user_context {
+                           prompt =
+                              format!("ADDITIONAL CONTEXT FROM USER:\n{user_ctx}\n\n{prompt}");
+                        }
+
+                        prompt
+                     },
+                  }],
+               }],
+            };
+
+            if debug_dir.is_some() {
+               let request_json = serde_json::to_string_pretty(&request)?;
+               save_debug_output(
+                  debug_dir,
+                  &debug_filename(debug_prefix, "analysis_request.json"),
+                  &request_json,
+               )?;
+            }
+
+            let mut request_builder = client
+               .post(anthropic_messages_url(&config.api_base_url))
+               .header("content-type", "application/json")
+               .header("anthropic-version", "2023-06-01");
+
+            if let Some(api_key) = &config.api_key {
+               request_builder = request_builder.header("x-api-key", api_key);
+            }
+
+            let response = request_builder
+               .json(&request)
+               .send()
+               .map_err(CommitGenError::HttpError)?;
+
+            let status = response.status();
+            let response_text = response.text().map_err(CommitGenError::HttpError)?;
+            if debug_dir.is_some() {
+               save_debug_output(
+                  debug_dir,
+                  &debug_filename(debug_prefix, "analysis_response.json"),
+                  &response_text,
+               )?;
+            }
+
+            if status.is_server_error() {
+               eprintln!(
+                  "{}",
+                  crate::style::error(&format!("Server error {status}: {response_text}"))
+               );
+               return Ok((true, None));
+            }
+
+            if !status.is_success() {
+               return Err(CommitGenError::ApiError {
+                  status: status.as_u16(),
+                  body:   response_text,
+               });
+            }
+
+            response_text
+         },
       };
 
-      let mut request_builder = client
-         .post(format!("{}/chat/completions", config.api_base_url))
-         .header("content-type", "application/json");
-
-      // Add Authorization header if API key is configured
-      if let Some(api_key) = &config.api_key {
-         request_builder = request_builder.header("Authorization", format!("Bearer {api_key}"));
+      if response_text.trim().is_empty() {
+         crate::style::warn("Model returned empty response body for analysis; retrying.");
+         return Ok((true, None));
       }
 
-      let response = request_builder
-         .json(&request)
-         .send()
-         .map_err(CommitGenError::HttpError)?;
-
-      let status = response.status();
-
-      // Retry on 5xx errors
-      if status.is_server_error() {
-         let error_text = response
-            .text()
-            .unwrap_or_else(|_| "Unknown error".to_string());
-         eprintln!("{}", crate::style::error(&format!("Server error {status}: {error_text}")));
-         return Ok((true, None)); // Retry
-      }
-
-      if !status.is_success() {
-         let error_text = response
-            .text()
-            .unwrap_or_else(|_| "Unknown error".to_string());
-         return Err(CommitGenError::ApiError { status: status.as_u16(), body: error_text });
-      }
-
-      let api_response: ApiResponse = response.json().map_err(CommitGenError::HttpError)?;
-
-      if api_response.choices.is_empty() {
-         return Err(CommitGenError::Other(
-            "API returned empty response for change analysis".to_string(),
-         ));
-      }
-
-      let message = &api_response.choices[0].message;
-
-      // Find the tool call in the response
-      if !message.tool_calls.is_empty() {
-         let tool_call = &message.tool_calls[0];
-         if tool_call.function.name == "create_conventional_analysis" {
-            let args = &tool_call.function.arguments;
-            if args.is_empty() {
-               crate::style::warn(
-                  "Model returned empty function arguments. Model may not support function \
-                   calling properly.",
-               );
-               return Err(CommitGenError::Other(
-                  "Model returned empty function arguments - try using a Claude model \
-                   (sonnet/opus/haiku)"
-                     .to_string(),
-               ));
-            }
-            let analysis: ConventionalAnalysis = serde_json::from_str(args).map_err(|e| {
+      match mode {
+         ResolvedApiMode::ChatCompletions => {
+            let api_response: ApiResponse = serde_json::from_str(&response_text).map_err(|e| {
                CommitGenError::Other(format!(
-                  "Failed to parse model response: {}. Response was: {}",
-                  e,
-                  args.chars().take(200).collect::<String>()
+                  "Failed to parse analysis response JSON: {e}. Response body: {}",
+                  response_snippet(&response_text, 500)
                ))
             })?;
-            return Ok((false, Some(analysis)));
-         }
-      }
 
-      // Fallback: try to parse content as text
-      if let Some(content) = &message.content {
-         let analysis: ConventionalAnalysis =
-            serde_json::from_str(content.trim()).map_err(CommitGenError::JsonError)?;
-         return Ok((false, Some(analysis)));
-      }
+            if api_response.choices.is_empty() {
+               return Err(CommitGenError::Other(
+                  "API returned empty response for change analysis".to_string(),
+               ));
+            }
 
-      Err(CommitGenError::Other("No conventional analysis found in API response".to_string()))
+            let message = &api_response.choices[0].message;
+
+            // Find the tool call in the response
+            if !message.tool_calls.is_empty() {
+               let tool_call = &message.tool_calls[0];
+               if tool_call.function.name == "create_conventional_analysis" {
+                  let args = &tool_call.function.arguments;
+                  if args.is_empty() {
+                     crate::style::warn(
+                        "Model returned empty function arguments. Model may not support function \
+                         calling properly.",
+                     );
+                     return Err(CommitGenError::Other(
+                        "Model returned empty function arguments - try using a Claude model \
+                         (sonnet/opus/haiku)"
+                           .to_string(),
+                     ));
+                  }
+                  let analysis: ConventionalAnalysis = serde_json::from_str(args).map_err(|e| {
+                     CommitGenError::Other(format!(
+                        "Failed to parse model response: {}. Response was: {}",
+                        e,
+                        args.chars().take(200).collect::<String>()
+                     ))
+                  })?;
+                  return Ok((false, Some(analysis)));
+               }
+            }
+
+            // Fallback: try to parse content as text
+            if let Some(content) = &message.content {
+               if content.trim().is_empty() {
+                  crate::style::warn("Model returned empty content for analysis; retrying.");
+                  return Ok((true, None));
+               }
+               let analysis: ConventionalAnalysis =
+                  serde_json::from_str(content.trim()).map_err(|e| {
+                     CommitGenError::Other(format!(
+                        "Failed to parse analysis content JSON: {e}. Content: {}",
+                        response_snippet(content, 500)
+                     ))
+                  })?;
+               return Ok((false, Some(analysis)));
+            }
+
+            Err(CommitGenError::Other("No conventional analysis found in API response".to_string()))
+         },
+         ResolvedApiMode::AnthropicMessages => {
+            let (tool_input, text_content) =
+               extract_anthropic_content(&response_text, "create_conventional_analysis")?;
+
+            if let Some(input) = tool_input {
+               let analysis: ConventionalAnalysis = serde_json::from_value(input).map_err(|e| {
+                  CommitGenError::Other(format!(
+                     "Failed to parse analysis tool input: {e}. Response body: {}",
+                     response_snippet(&response_text, 500)
+                  ))
+               })?;
+               return Ok((false, Some(analysis)));
+            }
+
+            if text_content.trim().is_empty() {
+               crate::style::warn("Model returned empty content for analysis; retrying.");
+               return Ok((true, None));
+            }
+
+            let analysis: ConventionalAnalysis =
+               serde_json::from_str(text_content.trim()).map_err(|e| {
+                  CommitGenError::Other(format!(
+                     "Failed to parse analysis content JSON: {e}. Content: {}",
+                     response_snippet(&text_content, 500)
+                  ))
+               })?;
+            Ok((false, Some(analysis)))
+         },
+      }
    })
 }
 
@@ -495,6 +832,7 @@ fn validate_summary_quality(
 }
 
 /// Create commit summary using a smaller model focused on detail retention
+#[allow(clippy::too_many_arguments, reason = "summary generation needs debug hooks and context")]
 pub fn generate_summary_from_analysis<'a>(
    stat: &'a str,
    commit_type: &'a str,
@@ -502,6 +840,8 @@ pub fn generate_summary_from_analysis<'a>(
    details: &'a [String],
    user_context: Option<&'a str>,
    config: &'a CommitConfig,
+   debug_dir: Option<&'a Path>,
+   debug_prefix: Option<&'a str>,
 ) -> Result<CommitSummary> {
    let mut validation_attempt = 0;
    let max_validation_retries = 1;
@@ -545,117 +885,315 @@ pub fn generate_summary_from_analysis<'a>(
             commit_type.len() + 2 + scope_str.len() + if scope_str.is_empty() { 0 } else { 2 }; // "type: " or "type(scope): "
          let max_summary_len = config.summary_guideline.saturating_sub(prefix_len);
 
-         let request = ApiRequest {
-            model:       config.model.clone(),
-            max_tokens:  200,
-            temperature: config.temperature,
-            tools:       vec![tool],
-            tool_choice: Some(serde_json::json!({
-               "type": "function",
-               "function": { "name": "create_commit_summary" }
-            })),
-            messages:    vec![Message {
-               role:    "user".to_string(),
-               content: {
-                  let details_str = if bullet_points.is_empty() {
-                     "None (no supporting detail points were generated)."
-                  } else {
-                     bullet_points.as_str()
-                  };
+         let mode = config.resolved_api_mode(&config.model);
 
-                  let base_prompt = templates::render_summary_prompt(
-                     &config.summary_prompt_variant,
-                     commit_type,
-                     scope_str,
-                     &max_summary_len.to_string(),
-                     details_str,
-                     stat.trim(),
-                     user_context,
+         let response_text = match mode {
+            ResolvedApiMode::ChatCompletions => {
+               let request = ApiRequest {
+                  model:       config.model.clone(),
+                  max_tokens:  200,
+                  temperature: config.temperature,
+                  tools:       vec![tool],
+                  tool_choice: Some(serde_json::json!({
+                     "type": "function",
+                     "function": { "name": "create_commit_summary" }
+                  })),
+                  messages:    vec![Message {
+                     role:    "user".to_string(),
+                     content: {
+                        let details_str = if bullet_points.is_empty() {
+                           "None (no supporting detail points were generated)."
+                        } else {
+                           bullet_points.as_str()
+                        };
+
+                        let base_prompt = templates::render_summary_prompt(
+                           &config.summary_prompt_variant,
+                           commit_type,
+                           scope_str,
+                           &max_summary_len.to_string(),
+                           details_str,
+                           stat.trim(),
+                           user_context,
+                        )?;
+
+                        format!("{base_prompt}{additional_constraint}")
+                     },
+                  }],
+               };
+
+               if debug_dir.is_some() {
+                  let request_json = serde_json::to_string_pretty(&request)?;
+                  save_debug_output(
+                     debug_dir,
+                     &debug_filename(debug_prefix, "summary_request.json"),
+                     &request_json,
                   )?;
+               }
 
-                  format!("{base_prompt}{additional_constraint}")
-               },
-            }],
+               let mut request_builder = client
+                  .post(format!("{}/chat/completions", config.api_base_url))
+                  .header("content-type", "application/json");
+
+               // Add Authorization header if API key is configured
+               if let Some(api_key) = &config.api_key {
+                  request_builder =
+                     request_builder.header("Authorization", format!("Bearer {api_key}"));
+               }
+
+               let response = request_builder
+                  .json(&request)
+                  .send()
+                  .map_err(CommitGenError::HttpError)?;
+
+               let status = response.status();
+               let response_text = response.text().map_err(CommitGenError::HttpError)?;
+               if debug_dir.is_some() {
+                  save_debug_output(
+                     debug_dir,
+                     &debug_filename(debug_prefix, "summary_response.json"),
+                     &response_text,
+                  )?;
+               }
+
+               // Retry on 5xx errors
+               if status.is_server_error() {
+                  eprintln!(
+                     "{}",
+                     crate::style::error(&format!("Server error {status}: {response_text}"))
+                  );
+                  return Ok((true, None)); // Retry
+               }
+
+               if !status.is_success() {
+                  return Err(CommitGenError::ApiError {
+                     status: status.as_u16(),
+                     body:   response_text,
+                  });
+               }
+
+               response_text
+            },
+            ResolvedApiMode::AnthropicMessages => {
+               let request = AnthropicRequest {
+                  model:       config.model.clone(),
+                  max_tokens:  200,
+                  temperature: config.temperature,
+                  tools:       vec![AnthropicTool {
+                     name:         "create_commit_summary".to_string(),
+                     description:  "Compose a git commit summary line from detail statements"
+                        .to_string(),
+                     input_schema: serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                           "summary": {
+                              "type": "string",
+                              "description": format!("Single line summary, target {} chars (hard limit {}), past tense verb first.", config.summary_guideline, config.summary_hard_limit),
+                              "maxLength": config.summary_hard_limit
+                           }
+                        },
+                        "required": ["summary"]
+                     }),
+                  }],
+                  tool_choice: Some(AnthropicToolChoice {
+                     choice_type: "tool".to_string(),
+                     name:        "create_commit_summary".to_string(),
+                  }),
+                  messages:    vec![AnthropicMessage {
+                     role:    "user".to_string(),
+                     content: vec![AnthropicContent {
+                        content_type: "text".to_string(),
+                        text: {
+                           let details_str = if bullet_points.is_empty() {
+                              "None (no supporting detail points were generated)."
+                           } else {
+                              bullet_points.as_str()
+                           };
+
+                           let base_prompt = templates::render_summary_prompt(
+                              &config.summary_prompt_variant,
+                              commit_type,
+                              scope_str,
+                              &max_summary_len.to_string(),
+                              details_str,
+                              stat.trim(),
+                              user_context,
+                           )?;
+
+                           format!("{base_prompt}{additional_constraint}")
+                        },
+                     }],
+                  }],
+               };
+
+               if debug_dir.is_some() {
+                  let request_json = serde_json::to_string_pretty(&request)?;
+                  save_debug_output(
+                     debug_dir,
+                     &debug_filename(debug_prefix, "summary_request.json"),
+                     &request_json,
+                  )?;
+               }
+
+               let mut request_builder = client
+                  .post(anthropic_messages_url(&config.api_base_url))
+                  .header("content-type", "application/json")
+                  .header("anthropic-version", "2023-06-01");
+
+               if let Some(api_key) = &config.api_key {
+                  request_builder = request_builder.header("x-api-key", api_key);
+               }
+
+               let response = request_builder
+                  .json(&request)
+                  .send()
+                  .map_err(CommitGenError::HttpError)?;
+
+               let status = response.status();
+               let response_text = response.text().map_err(CommitGenError::HttpError)?;
+               if debug_dir.is_some() {
+                  save_debug_output(
+                     debug_dir,
+                     &debug_filename(debug_prefix, "summary_response.json"),
+                     &response_text,
+                  )?;
+               }
+
+               // Retry on 5xx errors
+               if status.is_server_error() {
+                  eprintln!(
+                     "{}",
+                     crate::style::error(&format!("Server error {status}: {response_text}"))
+                  );
+                  return Ok((true, None)); // Retry
+               }
+
+               if !status.is_success() {
+                  return Err(CommitGenError::ApiError {
+                     status: status.as_u16(),
+                     body:   response_text,
+                  });
+               }
+
+               response_text
+            },
          };
 
-         let mut request_builder = client
-            .post(format!("{}/chat/completions", config.api_base_url))
-            .header("content-type", "application/json");
-
-         // Add Authorization header if API key is configured
-         if let Some(api_key) = &config.api_key {
-            request_builder = request_builder.header("Authorization", format!("Bearer {api_key}"));
+         if response_text.trim().is_empty() {
+            crate::style::warn("Model returned empty response body for summary; retrying.");
+            return Ok((true, None));
          }
 
-         let response = request_builder
-            .json(&request)
-            .send()
-            .map_err(CommitGenError::HttpError)?;
-
-         let status = response.status();
-
-         // Retry on 5xx errors
-         if status.is_server_error() {
-            let error_text = response
-               .text()
-               .unwrap_or_else(|_| "Unknown error".to_string());
-            eprintln!("{}", crate::style::error(&format!("Server error {status}: {error_text}")));
-            return Ok((true, None)); // Retry
-         }
-
-         if !status.is_success() {
-            let error_text = response
-               .text()
-               .unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(CommitGenError::ApiError { status: status.as_u16(), body: error_text });
-         }
-
-         let api_response: ApiResponse = response.json().map_err(CommitGenError::HttpError)?;
-
-         if api_response.choices.is_empty() {
-            return Err(CommitGenError::Other("Summary creation response was empty".to_string()));
-         }
-
-         let message_choice = &api_response.choices[0].message;
-
-         if !message_choice.tool_calls.is_empty() {
-            let tool_call = &message_choice.tool_calls[0];
-            if tool_call.function.name == "create_commit_summary" {
-               let args = &tool_call.function.arguments;
-               if args.is_empty() {
-                  crate::style::warn(
-                     "Model returned empty function arguments for summary. Model may not support \
-                      function calling.",
-                  );
-                  return Err(CommitGenError::Other(
-                     "Model returned empty summary arguments - try using a Claude model \
-                      (sonnet/opus/haiku)"
-                        .to_string(),
-                  ));
-               }
-               let summary: SummaryOutput = serde_json::from_str(args).map_err(|e| {
+         match mode {
+            ResolvedApiMode::ChatCompletions => {
+               let api_response: ApiResponse = serde_json::from_str(&response_text).map_err(|e| {
                   CommitGenError::Other(format!(
-                     "Failed to parse summary response: {}. Response was: {}",
-                     e,
-                     args.chars().take(200).collect::<String>()
+                     "Failed to parse summary response JSON: {e}. Response body: {}",
+                     response_snippet(&response_text, 500)
                   ))
                })?;
-               // Strip type prefix if LLM included it (e.g., "feat(scope): summary" ->
-               // "summary")
+
+               if api_response.choices.is_empty() {
+                  return Err(CommitGenError::Other(
+                     "Summary creation response was empty".to_string(),
+                  ));
+               }
+
+               let message_choice = &api_response.choices[0].message;
+
+               if !message_choice.tool_calls.is_empty() {
+                  let tool_call = &message_choice.tool_calls[0];
+                  if tool_call.function.name == "create_commit_summary" {
+                     let args = &tool_call.function.arguments;
+                     if args.is_empty() {
+                        crate::style::warn(
+                           "Model returned empty function arguments for summary. Model may not support \
+                            function calling.",
+                        );
+                        return Err(CommitGenError::Other(
+                           "Model returned empty summary arguments - try using a Claude model \
+                            (sonnet/opus/haiku)"
+                              .to_string(),
+                        ));
+                     }
+                     let summary: SummaryOutput = serde_json::from_str(args).map_err(|e| {
+                        CommitGenError::Other(format!(
+                           "Failed to parse summary response: {}. Response was: {}",
+                           e,
+                           args.chars().take(200).collect::<String>()
+                        ))
+                     })?;
+                     // Strip type prefix if LLM included it (e.g., "feat(scope): summary" ->
+                     // "summary")
+                     let cleaned = strip_type_prefix(&summary.summary, commit_type, scope);
+                     return Ok((false, Some(CommitSummary::new(
+                        cleaned,
+                        config.summary_hard_limit,
+                     )?)));
+                  }
+               }
+
+               if let Some(content) = &message_choice.content {
+                  if content.trim().is_empty() {
+                     crate::style::warn("Model returned empty content for summary; retrying.");
+                     return Ok((true, None));
+                  }
+                  let summary: SummaryOutput =
+                     serde_json::from_str(content.trim()).map_err(|e| {
+                        CommitGenError::Other(format!(
+                           "Failed to parse summary content JSON: {e}. Content: {}",
+                           response_snippet(content, 500)
+                        ))
+                     })?;
+                  // Strip type prefix if LLM included it
+                  let cleaned = strip_type_prefix(&summary.summary, commit_type, scope);
+                  return Ok((false, Some(CommitSummary::new(
+                     cleaned,
+                     config.summary_hard_limit,
+                  )?)));
+               }
+
+               Err(CommitGenError::Other(
+                  "No summary found in summary creation response".to_string(),
+               ))
+            },
+            ResolvedApiMode::AnthropicMessages => {
+               let (tool_input, text_content) =
+                  extract_anthropic_content(&response_text, "create_commit_summary")?;
+
+               if let Some(input) = tool_input {
+                  let summary: SummaryOutput = serde_json::from_value(input).map_err(|e| {
+                     CommitGenError::Other(format!(
+                        "Failed to parse summary tool input: {e}. Response body: {}",
+                        response_snippet(&response_text, 500)
+                     ))
+                  })?;
+                  let cleaned = strip_type_prefix(&summary.summary, commit_type, scope);
+                  return Ok((false, Some(CommitSummary::new(
+                     cleaned,
+                     config.summary_hard_limit,
+                  )?)));
+               }
+
+               if text_content.trim().is_empty() {
+                  crate::style::warn("Model returned empty content for summary; retrying.");
+                  return Ok((true, None));
+               }
+
+               let summary: SummaryOutput =
+                  serde_json::from_str(text_content.trim()).map_err(|e| {
+                     CommitGenError::Other(format!(
+                        "Failed to parse summary content JSON: {e}. Content: {}",
+                        response_snippet(&text_content, 500)
+                     ))
+                  })?;
                let cleaned = strip_type_prefix(&summary.summary, commit_type, scope);
-               return Ok((false, Some(CommitSummary::new(cleaned, config.summary_hard_limit)?)));
-            }
+               Ok((false, Some(CommitSummary::new(
+                  cleaned,
+                  config.summary_hard_limit,
+               )?)))
+            },
          }
-
-         if let Some(content) = &message_choice.content {
-            let summary: SummaryOutput =
-               serde_json::from_str(content.trim()).map_err(CommitGenError::JsonError)?;
-            // Strip type prefix if LLM included it
-            let cleaned = strip_type_prefix(&summary.summary, commit_type, scope);
-            return Ok((false, Some(CommitSummary::new(cleaned, config.summary_hard_limit)?)));
-         }
-
-         Err(CommitGenError::Other("No summary found in summary creation response".to_string()))
       });
 
       match result {

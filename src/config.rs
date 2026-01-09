@@ -10,10 +10,28 @@ use crate::{
    },
 };
 
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ApiMode {
+   Auto,
+   ChatCompletions,
+   AnthropicMessages,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResolvedApiMode {
+   ChatCompletions,
+   AnthropicMessages,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct CommitConfig {
    pub api_base_url: String,
+
+   /// API mode for model endpoints (auto/chat-completions/anthropic-messages)
+   #[serde(default = "default_api_mode")]
+   pub api_mode: ApiMode,
 
    /// Optional API key for authentication (overridden by `LLM_GIT_API_KEY` env
    /// var)
@@ -103,6 +121,10 @@ fn default_analysis_prompt_variant() -> String {
    "default".to_string()
 }
 
+const fn default_api_mode() -> ApiMode {
+   ApiMode::Auto
+}
+
 fn default_summary_prompt_variant() -> String {
    "default".to_string()
 }
@@ -131,10 +153,22 @@ const fn default_map_reduce_threshold() -> usize {
    30000 // ~30k tokens, roughly 120k characters
 }
 
+fn parse_api_mode(value: &str) -> ApiMode {
+   match value.trim().to_lowercase().as_str() {
+      "auto" => ApiMode::Auto,
+      "chat" | "chat-completions" | "chat_completions" => ApiMode::ChatCompletions,
+      "anthropic" | "messages" | "anthropic-messages" | "anthropic_messages" => {
+         ApiMode::AnthropicMessages
+      },
+      _ => ApiMode::Auto,
+   }
+}
+
 impl Default for CommitConfig {
    fn default() -> Self {
       Self {
          api_base_url:            "http://localhost:4000".to_string(),
+         api_mode:                default_api_mode(),
          api_key:                 None,
          request_timeout_secs:    120,
          connect_timeout_secs:    30,
@@ -192,11 +226,27 @@ impl Default for CommitConfig {
 }
 
 impl CommitConfig {
+   pub fn resolved_api_mode(&self, _model_name: &str) -> ResolvedApiMode {
+      match self.api_mode {
+         ApiMode::ChatCompletions => ResolvedApiMode::ChatCompletions,
+         ApiMode::AnthropicMessages => ResolvedApiMode::AnthropicMessages,
+         ApiMode::Auto => {
+            let base = self.api_base_url.to_lowercase();
+            if base.contains("anthropic") {
+               ResolvedApiMode::AnthropicMessages
+            } else {
+               ResolvedApiMode::ChatCompletions
+            }
+         },
+      }
+   }
+
    /// Load config from default location (~/.config/llm-git/config.toml)
    /// Falls back to Default if file doesn't exist or can't determine home
    /// directory Environment variables override config file values:
    /// - `LLM_GIT_API_URL` overrides `api_base_url`
    /// - `LLM_GIT_API_KEY` overrides `api_key`
+   /// - `LLM_GIT_API_MODE` overrides `api_mode`
    pub fn load() -> Result<Self> {
       let config_path = if let Ok(custom_path) = std::env::var("LLM_GIT_CONFIG") {
          PathBuf::from(custom_path)
@@ -225,6 +275,10 @@ impl CommitConfig {
 
       if let Ok(api_key) = std::env::var("LLM_GIT_API_KEY") {
          config.api_key = Some(api_key);
+      }
+
+      if let Ok(api_mode) = std::env::var("LLM_GIT_API_MODE") {
+         config.api_mode = parse_api_mode(&api_mode);
       }
    }
 

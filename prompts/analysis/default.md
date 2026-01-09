@@ -80,11 +80,11 @@ Omit `changelog_category` when `user_visible: false`.
 </instructions>
 
 <output_format>
-Call `create_change_analysis` with:
+Call `create_conventional_analysis` with:
 
 ```json
 {
-  "commit_type": "feat|fix|refactor|docs|test|chore|style|perf|build|ci|revert",
+  "type": "feat|fix|refactor|docs|test|chore|style|perf|build|ci|revert",
   "scope": "component-name" | null,
   "details": [
     {
@@ -106,7 +106,7 @@ Call `create_change_analysis` with:
 <example name="feature-with-api">
 ```json
 {
-  "commit_type": "feat",
+  "type": "feat",
   "scope": "api",
   "details": [
     {
@@ -132,7 +132,7 @@ Call `create_change_analysis` with:
 <example name="internal-refactor">
 ```json
 {
-  "commit_type": "refactor",
+  "type": "refactor",
   "scope": "parser",
   "details": [
     {
@@ -152,7 +152,7 @@ Call `create_change_analysis` with:
 <example name="bug-fix">
 ```json
 {
-  "commit_type": "fix",
+  "type": "fix",
   "scope": "parser",
   "details": [
     {
@@ -174,7 +174,7 @@ Call `create_change_analysis` with:
 <example name="mixed-visibility">
 ```json
 {
-  "commit_type": "feat",
+  "type": "feat",
   "scope": null,
   "details": [
     {
@@ -200,7 +200,7 @@ Call `create_change_analysis` with:
 <example name="minimal-chore">
 ```json
 {
-  "commit_type": "chore",
+  "type": "chore",
   "scope": "deps",
   "details": [],
   "issue_refs": []
