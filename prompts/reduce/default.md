@@ -33,7 +33,7 @@ changelog_category: Added | Changed | Fixed | Deprecated | Removed | Security
 user_visible: true for features, user-facing bugs, breaking changes, security fixes
 </output_format>
 
---------------------
+======USER=======
 {% if types_description %}
 
 <type_definitions>

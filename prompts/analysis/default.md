@@ -164,7 +164,7 @@ Call `create_conventional_analysis` with:
 
 Be thorough. This matters.
 
---------------------
+======USER=======
 {% if project_context %}
 <project_context>
 {{ project_context }}

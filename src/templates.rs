@@ -15,9 +15,9 @@ pub struct PromptParts {
    pub user:   String,
 }
 
-/// Split a rendered prompt into system and user parts based on separator.
+/// Split a rendered prompt into system and user parts based on separator line.
 fn split_prompt_parts(rendered: &str) -> PromptParts {
-   const SEPARATOR: &str = "--------------------";
+   const SEPARATOR: &str = "\n======USER=======\n";
    if let Some(pos) = rendered.find(SEPARATOR) {
       PromptParts {
          system: rendered[..pos].trim().to_string(),

@@ -25,7 +25,7 @@ Plain list, no preamble, no summary, no markdown formatting.
 
 Observations only. Classification happens in reduce phase.
 
---------------------
+======USER=======
 
 <file path="{{ filename }}">
 {{ diff }}

@@ -52,7 +52,7 @@ With entries: {"entries": {"Added": ["entry 1"], "Fixed": ["entry 2"]}}
 No changelog-worthy changes: {"entries": {}}
 </output_format>
 
---------------------
+======USER=======
 
 <context>
 Changelog: {{ changelog_path }}

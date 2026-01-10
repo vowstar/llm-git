@@ -51,7 +51,7 @@ comprehensive, various, several, improved, enhanced, quickly, simply, basically,
 Output the description text only. Include motivation, name specifics, stay focused.
 </output_format>
 
---------------------
+======USER=======
 {% if user_context %}
 
 <user_context>
