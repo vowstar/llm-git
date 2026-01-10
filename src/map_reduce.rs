@@ -265,7 +265,7 @@ fn map_single_file(
          ResolvedApiMode::AnthropicMessages => {
             let request = AnthropicRequest {
                model:       model_name.to_string(),
-               max_tokens:  600,
+               max_tokens:  1500,
                temperature: config.temperature,
                system:      if parts.system.is_empty() { None } else { Some(parts.system.clone()) },
                tools:       vec![AnthropicTool {
@@ -411,7 +411,7 @@ fn map_single_file(
                extract_anthropic_content(&response_text, "create_file_observation")?;
 
             if let Some(input) = tool_input {
-               let observations = input
+               let mut observations = input
                   .get("observations")
                   .and_then(|v| v.as_array())
                   .map(|arr| {
@@ -422,16 +422,23 @@ fn map_single_file(
                   .unwrap_or_default();
 
                if observations.is_empty() {
-                  if stop_reason.as_deref() == Some("max_tokens") {
+                  let text_observations = parse_observations_from_text(&text_content);
+                  if !text_observations.is_empty() {
+                     observations = text_observations;
+                  } else if stop_reason.as_deref() == Some("max_tokens") {
                      crate::style::warn(
-                        "Anthropic stopped at max_tokens with empty observations; retrying.",
+                        "Anthropic stopped at max_tokens with empty observations; using fallback observation.",
                      );
-                     return Ok((true, None));
+                     let fallback_target = Path::new(filename)
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or(filename);
+                     observations = vec![format!("Updated {fallback_target}.")];
+                  } else {
+                     crate::style::warn(
+                        "Model returned empty observation tool input; continuing with no observations.",
+                     );
                   }
-
-                  crate::style::warn(
-                     "Model returned empty observation tool input; continuing with no observations.",
-                  );
                }
 
                return Ok((
@@ -542,7 +549,7 @@ pub fn reduce_phase(
          ResolvedApiMode::AnthropicMessages => {
             let request = AnthropicRequest {
                model:       model_name.to_string(),
-               max_tokens:  1000,
+               max_tokens:  1500,
                temperature: config.temperature,
                system:      if parts.system.is_empty() { None } else { Some(parts.system.clone()) },
                tools:       vec![AnthropicTool {
@@ -796,6 +803,31 @@ fn response_snippet(body: &str, limit: usize) -> String {
       snippet.push_str("...");
    }
    snippet
+}
+
+fn parse_observations_from_text(text: &str) -> Vec<String> {
+   let trimmed = text.trim();
+   if trimmed.is_empty() {
+      return Vec::new();
+   }
+
+   if let Ok(obs) = serde_json::from_str::<FileObservationResponse>(trimmed) {
+      return obs.observations;
+   }
+
+   trimmed
+      .lines()
+      .map(str::trim)
+      .filter(|line| !line.is_empty())
+      .map(|line| {
+         line.strip_prefix("- ")
+            .or_else(|| line.strip_prefix("* "))
+            .unwrap_or(line)
+            .trim()
+      })
+      .filter(|line| !line.is_empty())
+      .map(str::to_string)
+      .collect()
 }
 
 fn anthropic_messages_url(base_url: &str) -> String {
@@ -1059,7 +1091,7 @@ fn build_api_request(
 
    ApiRequest {
       model: model.to_string(),
-      max_tokens: 1000,
+      max_tokens: 1500,
       temperature,
       tool_choice: tool_name
          .map(|name| serde_json::json!({ "type": "function", "function": { "name": name } })),
