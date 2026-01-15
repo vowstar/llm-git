@@ -420,15 +420,14 @@ fn map_single_file(
                extract_anthropic_content(&response_text, "create_file_observation")?;
 
             if let Some(input) = tool_input {
-               let mut observations = input
-                  .get("observations")
-                  .and_then(|v| v.as_array())
-                  .map(|arr| {
-                     arr.iter()
-                        .filter_map(|v| v.as_str().map(str::to_string))
-                        .collect::<Vec<_>>()
-                  })
-                  .unwrap_or_default();
+               let mut observations = match input.get("observations") {
+                  Some(serde_json::Value::Array(arr)) => arr
+                     .iter()
+                     .filter_map(|v| v.as_str().map(str::to_string))
+                     .collect::<Vec<_>>(),
+                  Some(serde_json::Value::String(s)) => parse_string_to_observations(s),
+                  _ => Vec::new(),
+               };
 
                if observations.is_empty() {
                   let text_observations = parse_observations_from_text(&text_content);
@@ -1018,7 +1017,80 @@ struct ApiResponse {
 
 #[derive(Debug, Deserialize)]
 struct FileObservationResponse {
+   #[serde(deserialize_with = "deserialize_observations")]
    observations: Vec<String>,
+}
+
+/// Deserialize observations flexibly: handles array, stringified array, or bullet string
+fn deserialize_observations<'de, D>(
+   deserializer: D,
+) -> std::result::Result<Vec<String>, D::Error>
+where
+   D: serde::Deserializer<'de>,
+{
+   use serde::de::{self, Visitor};
+   use std::fmt;
+
+   struct ObservationsVisitor;
+
+   impl<'de> Visitor<'de> for ObservationsVisitor {
+      type Value = Vec<String>;
+
+      fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+         formatter.write_str("an array of strings, a JSON array string, or a bullet-point string")
+      }
+
+      fn visit_seq<A>(self, mut seq: A) -> std::result::Result<Self::Value, A::Error>
+      where
+         A: de::SeqAccess<'de>,
+      {
+         let mut vec = Vec::new();
+         while let Some(item) = seq.next_element::<String>()? {
+            vec.push(item);
+         }
+         Ok(vec)
+      }
+
+      fn visit_str<E>(self, s: &str) -> std::result::Result<Self::Value, E>
+      where
+         E: de::Error,
+      {
+         Ok(parse_string_to_observations(s))
+      }
+   }
+
+   deserializer.deserialize_any(ObservationsVisitor)
+}
+
+/// Parse a string into observations: handles JSON array string or bullet-point string
+fn parse_string_to_observations(s: &str) -> Vec<String> {
+   let trimmed = s.trim();
+   if trimmed.is_empty() {
+      return Vec::new();
+   }
+
+   // Try parsing as JSON array first
+   if trimmed.starts_with('[')
+      && let Ok(arr) = serde_json::from_str::<Vec<String>>(trimmed)
+   {
+      return arr;
+   }
+
+   // Fall back to bullet-point parsing
+   trimmed
+      .lines()
+      .map(str::trim)
+      .filter(|line| !line.is_empty())
+      .map(|line| {
+         line.strip_prefix("- ")
+            .or_else(|| line.strip_prefix("* "))
+            .or_else(|| line.strip_prefix("• "))
+            .unwrap_or(line)
+            .trim()
+            .to_string()
+      })
+      .filter(|line| !line.is_empty())
+      .collect()
 }
 
 fn build_observation_tool() -> Tool {
@@ -1253,5 +1325,53 @@ diff --git a/e.rs b/e.rs
       assert_eq!(infer_file_description("src/api.rs", "fn call()"), "implementation");
       assert_eq!(infer_file_description("src/models.rs", "struct Foo"), "type definitions");
       assert_eq!(infer_file_description("src/unknown.xyz", ""), "source code");
+   }
+
+   #[test]
+   fn test_parse_string_to_observations_json_array() {
+      let input = r#"["item one", "item two", "item three"]"#;
+      let result = parse_string_to_observations(input);
+      assert_eq!(result, vec!["item one", "item two", "item three"]);
+   }
+
+   #[test]
+   fn test_parse_string_to_observations_bullet_points() {
+      let input = "- added new function\n- fixed bug in parser\n- updated tests";
+      let result = parse_string_to_observations(input);
+      assert_eq!(result, vec!["added new function", "fixed bug in parser", "updated tests"]);
+   }
+
+   #[test]
+   fn test_parse_string_to_observations_asterisk_bullets() {
+      let input = "* first change\n* second change";
+      let result = parse_string_to_observations(input);
+      assert_eq!(result, vec!["first change", "second change"]);
+   }
+
+   #[test]
+   fn test_parse_string_to_observations_empty() {
+      assert!(parse_string_to_observations("").is_empty());
+      assert!(parse_string_to_observations("   ").is_empty());
+   }
+
+   #[test]
+   fn test_deserialize_observations_array() {
+      let json = r#"{"observations": ["a", "b", "c"]}"#;
+      let result: FileObservationResponse = serde_json::from_str(json).unwrap();
+      assert_eq!(result.observations, vec!["a", "b", "c"]);
+   }
+
+   #[test]
+   fn test_deserialize_observations_stringified_array() {
+      let json = r#"{"observations": "[\"a\", \"b\", \"c\"]"}"#;
+      let result: FileObservationResponse = serde_json::from_str(json).unwrap();
+      assert_eq!(result.observations, vec!["a", "b", "c"]);
+   }
+
+   #[test]
+   fn test_deserialize_observations_bullet_string() {
+      let json = r#"{"observations": "- updated function\n- fixed bug"}"#;
+      let result: FileObservationResponse = serde_json::from_str(json).unwrap();
+      assert_eq!(result.observations, vec!["updated function", "fixed bug"]);
    }
 }
