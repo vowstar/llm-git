@@ -1021,15 +1021,15 @@ struct FileObservationResponse {
    observations: Vec<String>,
 }
 
-/// Deserialize observations flexibly: handles array, stringified array, or bullet string
-fn deserialize_observations<'de, D>(
-   deserializer: D,
-) -> std::result::Result<Vec<String>, D::Error>
+/// Deserialize observations flexibly: handles array, stringified array, or
+/// bullet string
+fn deserialize_observations<'de, D>(deserializer: D) -> std::result::Result<Vec<String>, D::Error>
 where
    D: serde::Deserializer<'de>,
 {
-   use serde::de::{self, Visitor};
    use std::fmt;
+
+   use serde::de::{self, Visitor};
 
    struct ObservationsVisitor;
 
@@ -1062,7 +1062,8 @@ where
    deserializer.deserialize_any(ObservationsVisitor)
 }
 
-/// Parse a string into observations: handles JSON array string or bullet-point string
+/// Parse a string into observations: handles JSON array string or bullet-point
+/// string
 fn parse_string_to_observations(s: &str) -> Vec<String> {
    let trimmed = s.trim();
    if trimmed.is_empty() {
@@ -1082,7 +1083,8 @@ fn parse_string_to_observations(s: &str) -> Vec<String> {
       .map(str::trim)
       .filter(|line| !line.is_empty())
       .map(|line| {
-         line.strip_prefix("- ")
+         line
+            .strip_prefix("- ")
             .or_else(|| line.strip_prefix("* "))
             .or_else(|| line.strip_prefix("• "))
             .unwrap_or(line)
