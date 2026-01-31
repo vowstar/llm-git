@@ -640,7 +640,7 @@ pub fn generate_conventional_analysis<'a>(
             // Find the tool call in the response
             if !message.tool_calls.is_empty() {
                let tool_call = &message.tool_calls[0];
-               if tool_call.function.name == "create_conventional_analysis" {
+               if tool_call.function.name.ends_with("create_conventional_analysis") {
                   let args = &tool_call.function.arguments;
                   if args.is_empty() {
                      crate::style::warn(
@@ -1107,7 +1107,7 @@ pub fn generate_summary_from_analysis<'a>(
 
                if !message_choice.tool_calls.is_empty() {
                   let tool_call = &message_choice.tool_calls[0];
-                  if tool_call.function.name == "create_commit_summary" {
+                  if tool_call.function.name.ends_with("create_commit_summary") {
                      let args = &tool_call.function.arguments;
                      if args.is_empty() {
                         crate::style::warn(

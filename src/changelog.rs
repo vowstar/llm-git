@@ -404,42 +404,52 @@ fn call_changelog_api(
       if let Ok(api_response) = serde_json::from_str::<ApiResponse>(&response_text) {
          let message = &api_response.choices[0].message;
 
-         // Check for tool calls (OpenAI format)
-         if !message.tool_calls.is_empty() {
-            let tool_call = &message.tool_calls[0];
-            if tool_call.function.name == "create_changelog_entries" {
+        // Check for tool calls (OpenAI format)
+        if !message.tool_calls.is_empty() {
+           let tool_call = &message.tool_calls[0];
+           if tool_call.function.name.ends_with("create_changelog_entries") {
+              let changelog_response: ChangelogResponse =
+                 serde_json::from_str(&tool_call.function.arguments).map_err(|e| {
+                    CommitGenError::Other(format!(
+                       "Failed to parse changelog tool arguments: {e}. Args: {}",
+                       tool_call
+                          .function
+                          .arguments
+                          .chars()
+                          .take(500)
+                          .collect::<String>()
+                    ))
+                 })?;
+              return Ok(changelog_response);
+           }
+        }
+
+         // Fallback: try content field (for models that don't support function calling)
+         if let Some(content) = &message.content {
+            let json_str = extract_json_from_content(content);
+            if !json_str.is_empty() {
                let changelog_response: ChangelogResponse =
-                  serde_json::from_str(&tool_call.function.arguments).map_err(|e| {
+                  serde_json::from_str(&json_str).map_err(|e| {
                      CommitGenError::Other(format!(
-                        "Failed to parse changelog tool arguments: {e}. Args: {}",
-                        tool_call
-                           .function
-                           .arguments
-                           .chars()
-                           .take(500)
-                           .collect::<String>()
+                        "Failed to parse changelog response from content: {e}. Content: {}",
+                        json_str.chars().take(500).collect::<String>()
                      ))
                   })?;
                return Ok(changelog_response);
             }
          }
-
-         // Fallback: try content field (for models that don't support function calling)
-         if let Some(content) = &message.content {
-            let json_str = extract_json_from_content(content);
-            let changelog_response: ChangelogResponse =
-               serde_json::from_str(&json_str).map_err(|e| {
-                  CommitGenError::Other(format!(
-                     "Failed to parse changelog response from content: {e}. Content: {}",
-                     json_str.chars().take(500).collect::<String>()
-                  ))
-               })?;
-            return Ok(changelog_response);
-         }
       }
 
       // Last resort: try to extract JSON from raw response
       let json_str = extract_json_from_content(&response_text);
+      if json_str.is_empty() {
+         return Err(CommitGenError::Other(
+            format!(
+               "Changelog API returned no tool calls or parseable content. Raw response: {}",
+               response_text.chars().take(1000).collect::<String>()
+            ),
+         ));
+      }
       let changelog_response: ChangelogResponse = serde_json::from_str(&json_str).map_err(|e| {
          CommitGenError::Other(format!(
             "Failed to parse changelog response: {e}. Content was: {}",

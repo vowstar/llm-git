@@ -408,7 +408,7 @@ pub fn analyze_for_compose(
       let message = &choice.message;
 
       if let Some(tool_call) = message.tool_calls.first()
-         && tool_call.function.name == "create_compose_analysis"
+          && tool_call.function.name.ends_with("create_compose_analysis")
       {
          let args = &tool_call.function.arguments;
          match parse_compose_groups_from_json(args) {
