@@ -695,7 +695,11 @@ pub fn reduce_phase(
 
             if !message.tool_calls.is_empty() {
                let tool_call = &message.tool_calls[0];
-               if tool_call.function.name.ends_with("create_conventional_analysis") {
+               if tool_call
+                  .function
+                  .name
+                  .ends_with("create_conventional_analysis")
+               {
                   let args = &tool_call.function.arguments;
                   if args.is_empty() {
                      return Err(CommitGenError::Other(

@@ -84,6 +84,11 @@ pub struct CommitConfig {
    #[serde(default = "default_gpg_sign")]
    pub gpg_sign: bool,
 
+   /// Add Signed-off-by trailer by default (can be overridden by --signoff CLI
+   /// flag)
+   #[serde(default = "default_signoff")]
+   pub signoff: bool,
+
    /// Commit types with descriptions for AI prompts (order = priority)
    #[serde(default = "default_types")]
    pub types: IndexMap<String, TypeConfig>,
@@ -141,6 +146,10 @@ const fn default_gpg_sign() -> bool {
    false
 }
 
+const fn default_signoff() -> bool {
+   false
+}
+
 const fn default_changelog_enabled() -> bool {
    true
 }
@@ -184,41 +193,41 @@ impl Default for CommitConfig {
          temperature:             0.2, // Low temperature for consistent structured output
          model:                   "claude-opus-4.5".to_string(),
          excluded_files:          vec![
-           // Rust
+            // Rust
             "Cargo.lock".to_string(),
-           // JavaScript/Node
+            // JavaScript/Node
             "package-lock.json".to_string(),
-           "npm-shrinkwrap.json".to_string(),
+            "npm-shrinkwrap.json".to_string(),
             "yarn.lock".to_string(),
             "pnpm-lock.yaml".to_string(),
-           "shrinkwrap.yaml".to_string(),
+            "shrinkwrap.yaml".to_string(),
             "bun.lock".to_string(),
             "bun.lockb".to_string(),
-           "deno.lock".to_string(),
-           // PHP
+            "deno.lock".to_string(),
+            // PHP
             "composer.lock".to_string(),
-           // Ruby
+            // Ruby
             "Gemfile.lock".to_string(),
-           // Python
+            // Python
             "poetry.lock".to_string(),
-           "Pipfile.lock".to_string(),
-           "pdm.lock".to_string(),
-           "uv.lock".to_string(),
-           // Go
-           "go.sum".to_string(),
-           // Nix
+            "Pipfile.lock".to_string(),
+            "pdm.lock".to_string(),
+            "uv.lock".to_string(),
+            // Go
+            "go.sum".to_string(),
+            // Nix
             "flake.lock".to_string(),
-           // Dart/Flutter
-           "pubspec.lock".to_string(),
-           // iOS/macOS
-           "Podfile.lock".to_string(),
-           "Packages.resolved".to_string(),
-           // Elixir
-           "mix.lock".to_string(),
-           // .NET
-           "packages.lock.json".to_string(),
-           // Gradle
-           "gradle.lockfile".to_string(),
+            // Dart/Flutter
+            "pubspec.lock".to_string(),
+            // iOS/macOS
+            "Podfile.lock".to_string(),
+            "Packages.resolved".to_string(),
+            // Elixir
+            "mix.lock".to_string(),
+            // .NET
+            "packages.lock.json".to_string(),
+            // Gradle
+            "gradle.lockfile".to_string(),
          ],
          low_priority_extensions: vec![
             ".lock".to_string(),
@@ -239,6 +248,7 @@ impl Default for CommitConfig {
          wide_change_abstract:    default_wide_change_abstract(),
          exclude_old_message:     default_exclude_old_message(),
          gpg_sign:                default_gpg_sign(),
+         signoff:                 default_signoff(),
          types:                   default_types(),
          classifier_hint:         default_classifier_hint(),
          categories:              default_categories(),

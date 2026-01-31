@@ -36,3 +36,7 @@ temperature = 0.2
 # GPG Signing (set to true to always sign commits)
 # Can also use --sign/-S CLI flag
 gpg_sign = false
+
+# Signed-off-by trailer (set to true to always add)
+# Can also use --signoff/-s CLI flag
+signoff = false

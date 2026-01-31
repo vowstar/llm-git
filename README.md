@@ -57,6 +57,7 @@ lgit --dry-run                      # Preview message without committing
 lgit --copy                         # Copy message to clipboard
 lgit -p                             # Commit and push
 lgit -S                             # GPG sign the commit
+lgit -s                             # Add Signed-off-by trailer
 
 # Modes
 lgit --mode=unstaged                # Preview unstaged changes (no commit)
@@ -137,6 +138,10 @@ summary_hard_limit = 128                  # Absolute max
 changelog_enabled = true
 map_reduce_enabled = true                 # Parallel analysis for large commits
 temperature = 0.2
+
+# Commit signing
+gpg_sign = false                          # GPG sign commits by default (-S)
+signoff = false                           # Add Signed-off-by trailer by default (-s)
 ```
 
 ### Provider Examples

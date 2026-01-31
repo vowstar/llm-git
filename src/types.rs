@@ -964,6 +964,10 @@ pub struct Args {
    #[arg(long, short = 'S')]
    pub sign: bool,
 
+   /// Add Signed-off-by trailer (equivalent to git commit -s)
+   #[arg(long, short = 's')]
+   pub signoff: bool,
+
    /// Skip pre-commit and commit-msg hooks (equivalent to git commit
    /// --no-verify)
    #[arg(long, short = 'n')]
@@ -1087,6 +1091,7 @@ impl Default for Args {
          refs:                    vec![],
          breaking:                false,
          sign:                    false,
+         signoff:                 false,
          skip_hooks:              false,
          config:                  None,
          context:                 vec![],

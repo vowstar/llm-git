@@ -408,7 +408,7 @@ pub fn analyze_for_compose(
       let message = &choice.message;
 
       if let Some(tool_call) = message.tool_calls.first()
-          && tool_call.function.name.ends_with("create_compose_analysis")
+         && tool_call.function.name.ends_with("create_compose_analysis")
       {
          let args = &tool_call.function.arguments;
          match parse_compose_groups_from_json(args) {
@@ -814,7 +814,8 @@ pub fn execute_compose(
       // Create commit (unless preview mode)
       if !args.compose_preview {
          let sign = args.sign || config.gpg_sign;
-         git_commit(&formatted_message, false, dir, sign, args.skip_hooks)?;
+         let signoff = args.signoff || config.signoff;
+         git_commit(&formatted_message, false, dir, sign, signoff, args.skip_hooks)?;
          let hash = get_head_hash(dir)?;
          commit_hashes.push(hash);
 

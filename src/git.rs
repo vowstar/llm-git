@@ -229,18 +229,23 @@ pub fn get_git_stat(
 }
 
 /// Execute git commit with the given message
+#[allow(clippy::fn_params_excessive_bools, reason = "commit flags are naturally boolean")]
 pub fn git_commit(
    message: &str,
    dry_run: bool,
    dir: &str,
    sign: bool,
+   signoff: bool,
    skip_hooks: bool,
 ) -> Result<()> {
    if dry_run {
       let sign_flag = if sign { " -S" } else { "" };
+      let signoff_flag = if signoff { " -s" } else { "" };
       let hooks_flag = if skip_hooks { " --no-verify" } else { "" };
-      let command =
-         format!("git commit{sign_flag}{hooks_flag} -m \"{}\"", message.replace('\n', "\\n"));
+      let command = format!(
+         "git commit{sign_flag}{signoff_flag}{hooks_flag} -m \"{}\"",
+         message.replace('\n', "\\n")
+      );
       println!("\n{}", style::boxed_message("DRY RUN", &command, 60));
       return Ok(());
    }
@@ -248,6 +253,9 @@ pub fn git_commit(
    let mut args = vec!["commit"];
    if sign {
       args.push("-S");
+   }
+   if signoff {
+      args.push("-s");
    }
    if skip_hooks {
       args.push("--no-verify");
